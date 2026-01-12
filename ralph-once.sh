@@ -36,7 +36,7 @@ if [ -z "$ISSUES" ] || [ "$ISSUES" = "[]" ]; then
     exit 0
 fi
 
-if claude --permission-mode acceptEdits "
+if opencode run "
 Here are the open GitHub issues for $REPO:
 
 $ISSUES
