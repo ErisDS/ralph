@@ -38,7 +38,7 @@ fi
 
 PROGRESS=$(cat progress.txt)
 
-if opencode run "
+opencode --prompt "
 Here are the open GitHub issues for $REPO:
 
 $ISSUES
@@ -55,9 +55,4 @@ $PROGRESS
 6. Update progress.txt with what you did, including the issue number.
 7. Raise a pull request with a title and description referencing the issue, and share the link
 8. Output: <promise>COMPLETE</promise>
-ONLY DO ONE ISSUE AT A TIME."; then
-    echo "Ralph completed successfully"
-else
-    echo "Ralph exited with an error"
-    exit 1
-fi
+ONLY DO ONE ISSUE AT A TIME."
