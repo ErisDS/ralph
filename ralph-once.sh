@@ -51,8 +51,9 @@ $PROGRESS
 2. Find the next issue to work on (pick the lowest numbered issue not marked as done in progress.txt).
 3. Implement the changes needed to resolve the issue.
 4. Run the test suite and linter. Fix any failures or quality issues before proceeding.
-5. Commit your changes with a well-written commit message following guidance in AGENTS.md
-6. Update progress.txt with what you did, including the issue number.
-7. Raise a pull request with a title and description referencing the issue, and share the link
-8. Output: <promise>COMPLETE</promise>
+5. If you discover anything critically missing, raise an issue for it (max 2 issues).
+6. Commit your changes with a well-written commit message following guidance in AGENTS.md
+7. Update progress.txt with what you did, including the issue number.
+8. Raise a pull request with a title and description referencing the issue, and share the link
+9. Output: <promise>COMPLETE</promise>
 ONLY DO ONE ISSUE AT A TIME."
