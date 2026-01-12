@@ -52,7 +52,7 @@ $PROGRESS
 3. Implement the changes needed to resolve the issue.
 4. Run the test suite and linter. Fix any failures or quality issues before proceeding.
 5. If you discover anything critically missing, raise an issue for it (max 2 issues).
-6. Commit your changes with a well-written commit message following guidance in AGENTS.md
+6. ONLY when all checks are passing, commit your changes with a well-written commit message following guidance in AGENTS.md
 7. Update progress.txt with what you did, including the issue number.
 8. Raise a pull request with a title and description referencing the issue, and share the link
 9. Output: <promise>COMPLETE</promise>
