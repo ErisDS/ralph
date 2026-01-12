@@ -54,6 +54,7 @@ $PROGRESS
 5. If you discover anything critically missing, raise an issue for it (max 2 issues).
 6. ONLY when all checks are passing, commit your changes with a well-written commit message following guidance in AGENTS.md
 7. Update progress.txt with what you did, including the issue number.
-8. Raise a pull request with a title and description referencing the issue, and share the link
-9. Output: <promise>COMPLETE</promise>
+8. Raise a pull request with a title and description referencing the issue, and share the link.
+9. Wait for PR status checks to pass. If they fail, fix the issues and push again.
+10. Output: <promise>COMPLETE</promise>
 ONLY DO ONE ISSUE AT A TIME."
