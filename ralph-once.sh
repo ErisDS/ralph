@@ -36,13 +36,16 @@ if [ -z "$ISSUES" ] || [ "$ISSUES" = "[]" ]; then
     exit 0
 fi
 
+PROGRESS=$(cat progress.txt)
+
 if opencode run "
 Here are the open GitHub issues for $REPO:
 
 $ISSUES
 
-And here is the progress file:
-@progress.txt
+And here is the progress file (progress.txt):
+
+$PROGRESS
 
 1. Review the issues and progress file.
 2. Find the next issue to work on (pick the lowest numbered issue not marked as done in progress.txt).
