@@ -50,7 +50,7 @@ $PROGRESS
 1. Review the issues and progress file.
 2. Find the next issue to work on (pick the lowest numbered issue not marked as done in progress.txt).
 3. Implement the changes needed to resolve the issue.
-4. Check your work for quality issues, iteratively make any amends.
+4. Run the test suite and linter. Fix any failures or quality issues before proceeding.
 5. Commit your changes with a well-written commit message following guidance in AGENTS.md
 6. Update progress.txt with what you did, including the issue number.
 7. Raise a pull request with a title and description referencing the issue, and share the link
