@@ -22,6 +22,12 @@ if [[ ! "$REMOTE_URL" =~ "$REPO" ]]; then
     exit 1
 fi
 
+# Get the default branch and ensure we're on latest
+DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+echo "Checking out $DEFAULT_BRANCH and pulling latest..."
+git checkout "$DEFAULT_BRANCH"
+git pull origin "$DEFAULT_BRANCH"
+
 # Ensure progress.txt exists
 touch progress.txt
 
