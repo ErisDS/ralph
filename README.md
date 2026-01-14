@@ -72,7 +72,11 @@ Control how Ralph handles completed work:
 --pr       # Raise a PR and wait for checks (default)
 --main     # Commit to main and push
 --commit   # Commit to main but don't push (for local review)
+--branch   # Create a branch and commit (no push)
+--none     # Don't commit, leave files unstaged
 ```
+
+For `--branch` mode, Ralph will use the `branchName` from your PRD file if available, otherwise it generates a sensible name from the task.
 
 Examples:
 
@@ -80,6 +84,8 @@ Examples:
 ralph-once.sh --pr myorg/myproject
 ralph-once.sh --main --prd ./tasks/prd.json
 ralph-once.sh --commit myorg/myproject
+ralph-once.sh --branch --prd ./tasks/prd.json
+ralph-once.sh --none myorg/myproject
 ```
 
 ## Configuration

@@ -81,13 +81,17 @@ interactive_setup() {
     echo "  1) Raise a PR and wait for checks"
     echo "  2) Commit to main and push"
     echo "  3) Commit to main only (no push)"
+    echo "  4) Branch and commit (no push)"
+    echo "  5) Don't commit (leave files unstaged)"
     echo ""
-    read -p "Choose [1/2/3]: " commit_choice
+    read -p "Choose [1/2/3/4/5]: " commit_choice
     
     case $commit_choice in
         1) COMMIT_MODE="pr" ;;
         2) COMMIT_MODE="main" ;;
         3) COMMIT_MODE="commit" ;;
+        4) COMMIT_MODE="branch" ;;
+        5) COMMIT_MODE="none" ;;
         *)
             echo "Invalid choice"
             exit 1
@@ -109,6 +113,8 @@ show_usage() {
     echo "  --pr       Raise a PR and wait for checks"
     echo "  --main     Commit directly to main branch and push"
     echo "  --commit   Commit to main but don't push"
+    echo "  --branch   Create a branch and commit (no push)"
+    echo "  --none     Don't commit, leave files unstaged"
     echo "  --setup    Force interactive setup (overwrites existing config)"
     echo ""
     echo "Examples:"
@@ -140,6 +146,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --commit)
             COMMIT_MODE="commit"
+            shift
+            ;;
+        --branch)
+            COMMIT_MODE="branch"
+            shift
+            ;;
+        --none)
+            COMMIT_MODE="none"
             shift
             ;;
         --setup)
@@ -239,6 +253,10 @@ if [ "$MODE" = "prd" ]; then
     echo "PRD file: $PRD_FILE"
     echo "Commit mode: $COMMIT_MODE"
     
+    # Get branch name from PRD if available
+    PRD_BRANCH=$(echo "$PRD_CONTENT" | jq -r '.branchName // ""')
+    [ "$PRD_BRANCH" = "null" ] && PRD_BRANCH=""
+    
     case "$COMMIT_MODE" in
         pr)
             COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, commit your changes with a well-written commit message following guidance in AGENTS.md
@@ -252,6 +270,19 @@ if [ "$MODE" = "prd" ]; then
         commit)
             COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, commit your changes to main with a well-written commit message following guidance in AGENTS.md
 7. Do NOT push - leave the commit local for review."
+            ;;
+        branch)
+            if [ -n "$PRD_BRANCH" ]; then
+                COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, create or switch to branch '$PRD_BRANCH' and commit your changes with a well-written commit message following guidance in AGENTS.md
+7. Do NOT push - leave the branch local for review."
+            else
+                COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, create a new branch with a sensible name based on the task (e.g., feature/US-001-task-title) and commit your changes with a well-written commit message following guidance in AGENTS.md
+7. Do NOT push - leave the branch local for review."
+            fi
+            ;;
+        none)
+            COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, leave all files unstaged. Do NOT commit or push anything.
+7. Report what files were changed so they can be reviewed."
             ;;
     esac
     
@@ -312,6 +343,14 @@ case "$COMMIT_MODE" in
     commit)
         COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, commit your changes to main with a well-written commit message following guidance in AGENTS.md
 7. Do NOT push - leave the commit local for review."
+        ;;
+    branch)
+        COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, create a new branch with a sensible name based on the issue (e.g., feature/123-issue-title) and commit your changes with a well-written commit message following guidance in AGENTS.md
+7. Do NOT push - leave the branch local for review."
+        ;;
+    none)
+        COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, leave all files unstaged. Do NOT commit or push anything.
+7. Report what files were changed so they can be reviewed."
         ;;
 esac
 
