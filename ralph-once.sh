@@ -198,8 +198,8 @@ PROGRESS=$(cat progress.txt)
 # BUILD PROMPT SECTIONS
 # ============================================================
 
-# --- TASK CONTEXT & SELECTION: Mode-specific task loading ---
-build_prd_context() {
+# --- TASK CONTEXT: Mode-specific task fetching ---
+fetch_prd_tasks() {
     PRD_CONTENT=$(cat "$PRD_FILE")
     PRD_NAME=$(jq -r '.name // "Unknown Project"' "$PRD_FILE")
     PRD_BRANCH=$(jq -r '.branchName // ""' "$PRD_FILE")
@@ -212,13 +212,9 @@ build_prd_context() {
 
 Here is the PRD file ($PRD_FILE):
 
-$PRD_CONTENT"
+$PRD_CONTENT
 
-    SELECTION_INSTRUCTIONS='1. Review the userStories in the PRD. Tasks with "passes": false are incomplete.
-2. Find the next task to work on:
-   - Pick an incomplete task (passes: false) whose dependencies (dependsOn) are all complete
-   - Prefer lower priority numbers (priority 1 before priority 2)
-   - If multiple tasks qualify, pick the one with the lowest ID'
+Tasks with \"passes\": false are incomplete. A task can only be worked on if all its dependencies (dependsOn) are complete."
 
     GAPS_INSTRUCTIONS="5. If you discover anything critically missing, note it in progress.txt (max 2 items)."
 
@@ -230,7 +226,7 @@ ONLY DO ONE TASK AT A TIME."
     TASK_ITEM="task"
 }
 
-build_github_context() {
+fetch_github_tasks() {
     echo "Working on repo: $REPO"
     
     ISSUES=$(gh issue list --repo "$REPO" --state open --limit 20 --json number,title,body,labels) || {
@@ -241,10 +237,9 @@ build_github_context() {
     
     TASK_CONTEXT="Here are the open GitHub issues for $REPO:
 
-$ISSUES"
+$ISSUES
 
-    SELECTION_INSTRUCTIONS="1. Review the issues and progress file.
-2. Find the next issue to work on (pick the lowest numbered issue not marked as done in progress.txt)."
+Issues marked as done in progress.txt should not be worked on again."
 
     GAPS_INSTRUCTIONS="5. If you discover anything critically missing, raise an issue for it (max 2 issues)."
 
@@ -256,11 +251,17 @@ ONLY DO ONE ISSUE AT A TIME."
 }
 
 case "$MODE" in
-    prd)    build_prd_context ;;
-    github) build_github_context ;;
+    prd)    fetch_prd_tasks ;;
+    github) fetch_github_tasks ;;
 esac
 
 echo "Commit mode: $COMMIT_MODE"
+
+# --- SELECTION: How to choose the next task (same for all modes) ---
+SELECTION_INSTRUCTIONS="1. Review the available ${TASK_ITEM}s and the progress file.
+2. Find the next $TASK_ITEM to work on:
+   - Pick the lowest-numbered $TASK_ITEM that is available to be worked on
+   - Use your judgment if one seems more urgent or foundational than others"
 
 # --- IMPLEMENTATION: Core work steps (same for all modes) ---
 IMPLEMENTATION_INSTRUCTIONS="3. Implement the changes needed to complete the $TASK_ITEM.
