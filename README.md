@@ -2,14 +2,14 @@
 
 An automated coding agent runner that picks tasks and implements them one at a time.
 
-Ralph works with either GitHub issues or a PRD (Product Requirements Document) file as a task source, and uses [OpenCode](https://opencode.ai) to implement each task autonomously.
+Ralph works with either GitHub issues or a PRD (Product Requirements Document) file as a task source, and uses an AI coding agent to implement each task autonomously.
 
 ## Requirements
 
 - `git` - for version control
 - `gh` - GitHub CLI (for GitHub issues mode)
 - `jq` - JSON processor (for PRD mode)
-- `opencode` - AI coding CLI
+- `opencode` or `claude` - AI coding CLI (at least one)
 
 ## Installation
 
@@ -46,6 +46,7 @@ ralph-once.sh
 On first run, Ralph will interactively ask you:
 1. Where to get tasks from (GitHub issues or PRD file)
 2. How to handle completed work (PR, commit+push, commit only, branch, or no commit)
+3. Which AI agent to use (opencode or claude)
 
 Your preferences are saved to `.ralph/config.json` so subsequent runs just work.
 
@@ -88,6 +89,22 @@ ralph-once.sh --branch --prd ./tasks/prd.json
 ralph-once.sh --none myorg/myproject
 ```
 
+### AI Agent
+
+Choose which AI agent runs the tasks:
+
+```bash
+--opencode  # Use opencode (default)
+--claude    # Use claude
+```
+
+Examples:
+
+```bash
+ralph-once.sh --claude --prd ./tasks/prd.json
+ralph-once.sh --claude myorg/myproject
+```
+
 ## Configuration
 
 Ralph stores project configuration in `.ralph/config.json`:
@@ -97,7 +114,8 @@ Ralph stores project configuration in `.ralph/config.json`:
   "mode": "github",
   "commitMode": "pr",
   "repo": "owner/repo",
-  "prdFile": ""
+  "prdFile": "",
+  "agent": "opencode"
 }
 ```
 
@@ -107,7 +125,7 @@ Run `ralph-once.sh --setup` to reconfigure at any time.
 
 1. Checks out the default branch and pulls latest changes
 2. Fetches tasks (GitHub issues or PRD user stories)
-3. Passes tasks to OpenCode with instructions to:
+3. Passes tasks to the AI agent with instructions to:
    - Pick the next available task
    - Implement the changes
    - Run tests and linter

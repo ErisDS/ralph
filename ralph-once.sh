@@ -22,6 +22,7 @@ load_config() {
     COMMIT_MODE=$(json_value '.commitMode')
     REPO=$(json_value '.repo')
     PRD_FILE=$(json_value '.prdFile')
+    AGENT=$(json_value '.agent')
 }
 
 save_config() {
@@ -31,7 +32,8 @@ save_config() {
   "mode": "$MODE",
   "commitMode": "$COMMIT_MODE",
   "repo": "$REPO",
-  "prdFile": "$PRD_FILE"
+  "prdFile": "$PRD_FILE",
+  "agent": "$AGENT"
 }
 EOF
     echo "Configuration saved to $CONFIG_FILE"
@@ -92,6 +94,19 @@ interactive_setup() {
     esac
     
     echo ""
+    echo "Which AI agent should Ralph use?"
+    echo "  1) opencode (default)"
+    echo "  2) claude"
+    echo ""
+    read -p "Choose [1/2]: " agent_choice
+    
+    case $agent_choice in
+        1|"") AGENT="opencode" ;;
+        2)    AGENT="claude" ;;
+        *)    echo "Invalid choice"; exit 1 ;;
+    esac
+    
+    echo ""
     save_config
     echo ""
 }
@@ -104,17 +119,20 @@ If no arguments are provided and no config exists, Ralph will
 interactively ask for your preferences and save them.
 
 Options:
-  --pr       Raise a PR and wait for checks
-  --main     Commit directly to main branch and push
-  --commit   Commit to main but don't push
-  --branch   Create a branch and commit (no push)
-  --none     Don't commit, leave files unstaged
-  --setup    Force interactive setup (overwrites existing config)
+  --pr        Raise a PR and wait for checks
+  --main      Commit directly to main branch and push
+  --commit    Commit to main but don't push
+  --branch    Create a branch and commit (no push)
+  --none      Don't commit, leave files unstaged
+  --opencode  Use opencode as the AI agent (default)
+  --claude    Use claude as the AI agent
+  --setup     Force interactive setup (overwrites existing config)
 
 Examples:
   ralph-once.sh                          # Use saved config or run setup
   ralph-once.sh myorg/myproject          # GitHub issues mode
   ralph-once.sh --prd ./tasks/prd.json   # PRD file mode
+  ralph-once.sh --claude --prd ./prd.json # Use claude with PRD
   ralph-once.sh --setup                  # Re-run interactive setup
 EOF
 }
@@ -126,6 +144,7 @@ MODE=""
 REPO=""
 PRD_FILE=""
 COMMIT_MODE=""
+AGENT=""
 FORCE_SETUP=false
 
 while [[ $# -gt 0 ]]; do
@@ -136,6 +155,8 @@ while [[ $# -gt 0 ]]; do
         --commit)      COMMIT_MODE="commit"; shift ;;
         --branch)      COMMIT_MODE="branch"; shift ;;
         --none)        COMMIT_MODE="none"; shift ;;
+        --opencode)    AGENT="opencode"; shift ;;
+        --claude)      AGENT="claude"; shift ;;
         --setup)       FORCE_SETUP=true; shift ;;
         -h|--help)     show_usage; exit 0 ;;
         -*)            echo "Unknown option: $1"; show_usage; exit 1 ;;
@@ -161,8 +182,9 @@ elif [ -z "$MODE" ]; then
     fi
 fi
 
-# Default commit mode
+# Defaults
 [ -z "$COMMIT_MODE" ] && COMMIT_MODE="pr"
+[ -z "$AGENT" ] && AGENT="opencode"
 
 # ============================================================
 # VALIDATION
@@ -256,6 +278,7 @@ case "$MODE" in
 esac
 
 echo "Commit mode: $COMMIT_MODE"
+echo "Agent: $AGENT"
 
 # --- SELECTION: How to choose the next task (same for all modes) ---
 SELECTION_INSTRUCTIONS="1. Review the available ${TASK_ITEM}s and the progress file.
@@ -304,9 +327,9 @@ build_commit_instructions() {
 COMMIT_INSTRUCTIONS=$(build_commit_instructions)
 
 # ============================================================
-# RUN OPENCODE
+# RUN AGENT
 # ============================================================
-opencode --prompt "
+PROMPT="
 $TASK_CONTEXT
 
 And here is the progress file (progress.txt):
@@ -318,3 +341,9 @@ $IMPLEMENTATION_INSTRUCTIONS
 $GAPS_INSTRUCTIONS
 $COMMIT_INSTRUCTIONS
 $COMPLETION_INSTRUCTIONS"
+
+case "$AGENT" in
+    opencode) opencode --prompt "$PROMPT" ;;
+    claude)   claude --prompt "$PROMPT" ;;
+    *)        echo "Error: Unknown agent '$AGENT'"; exit 1 ;;
+esac
