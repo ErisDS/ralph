@@ -45,7 +45,7 @@ ralph-once.sh
 
 On first run, Ralph will interactively ask you:
 1. Where to get tasks from (GitHub issues or PRD file)
-2. How to handle completed work (PR, commit+push, or commit only)
+2. How to handle completed work (PR, commit+push, commit only, branch, or no commit)
 
 Your preferences are saved to `.ralph/config.json` so subsequent runs just work.
 
