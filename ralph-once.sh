@@ -243,97 +243,75 @@ touch progress.txt
 PROGRESS=$(cat progress.txt)
 
 # ============================================================
-# PRD MODE
+# BUILD PROMPT SECTIONS
 # ============================================================
+
+# --- TASK CONTEXT: What tasks are available ---
 if [ "$MODE" = "prd" ]; then
     PRD_CONTENT=$(cat "$PRD_FILE")
     PRD_NAME=$(echo "$PRD_CONTENT" | jq -r '.name // "Unknown Project"')
-    
-    echo "Working on PRD: $PRD_NAME"
-    echo "PRD file: $PRD_FILE"
-    echo "Commit mode: $COMMIT_MODE"
-    
-    # Get branch name from PRD if available
     PRD_BRANCH=$(echo "$PRD_CONTENT" | jq -r '.branchName // ""')
     [ "$PRD_BRANCH" = "null" ] && PRD_BRANCH=""
     
-    case "$COMMIT_MODE" in
-        pr)
-            COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, commit your changes with a well-written commit message following guidance in AGENTS.md
-7. Raise a pull request with a title and description referencing the task, and share the link.
-8. Wait for PR status checks to pass. If they fail, fix the issues and push again."
-            ;;
-        main)
-            COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, commit your changes to main with a well-written commit message following guidance in AGENTS.md
-7. Push your commit to origin."
-            ;;
-        commit)
-            COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, commit your changes to main with a well-written commit message following guidance in AGENTS.md
-7. Do NOT push - leave the commit local for review."
-            ;;
-        branch)
-            if [ -n "$PRD_BRANCH" ]; then
-                COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, create or switch to branch '$PRD_BRANCH' and commit your changes with a well-written commit message following guidance in AGENTS.md
-7. Do NOT push - leave the branch local for review."
-            else
-                COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, create a new branch with a sensible name based on the task (e.g., feature/US-001-task-title) and commit your changes with a well-written commit message following guidance in AGENTS.md
-7. Do NOT push - leave the branch local for review."
-            fi
-            ;;
-        none)
-            COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, leave all files unstaged. Do NOT commit or push anything.
-7. Report what files were changed so they can be reviewed."
-            ;;
-    esac
+    echo "Working on PRD: $PRD_NAME"
+    echo "PRD file: $PRD_FILE"
     
-    opencode --prompt "
-You are working on: $PRD_NAME
+    TASK_CONTEXT="You are working on: $PRD_NAME
 
 Here is the PRD file ($PRD_FILE):
 
-$PRD_CONTENT
+$PRD_CONTENT"
+    TASK_ITEM="task"
+else
+    echo "Working on repo: $REPO"
+    
+    # Fetch open issues from the repo
+    if ! ISSUES=$(gh issue list --repo "$REPO" --state open --limit 20 --json number,title,body,labels); then
+        echo "Error: Failed to fetch issues from $REPO"
+        exit 1
+    fi
+    
+    if [ -z "$ISSUES" ] || [ "$ISSUES" = "[]" ]; then
+        echo "No open issues found in $REPO"
+        exit 0
+    fi
+    
+    TASK_CONTEXT="Here are the open GitHub issues for $REPO:
 
-And here is the progress file (progress.txt):
+$ISSUES"
+    TASK_ITEM="issue"
+fi
 
-$PROGRESS
+echo "Commit mode: $COMMIT_MODE"
 
-1. Review the userStories in the PRD. Tasks with \"passes\": false are incomplete.
+# --- SELECTION: How to choose the next task ---
+if [ "$MODE" = "prd" ]; then
+    SELECTION_INSTRUCTIONS="1. Review the userStories in the PRD. Tasks with \"passes\": false are incomplete.
 2. Find the next task to work on:
    - Pick an incomplete task (passes: false) whose dependencies (dependsOn) are all complete
    - Prefer lower priority numbers (priority 1 before priority 2)
-   - If multiple tasks qualify, pick the one with the lowest ID
-3. Implement the changes needed to satisfy the acceptance criteria.
-4. Run the test suite and linter. Fix any failures or quality issues before proceeding.
-5. If you discover anything critically missing, note it in progress.txt (max 2 items).
-$COMMIT_INSTRUCTIONS
-9. Update progress.txt with what you did, including the task ID.
-10. Update the PRD file ($PRD_FILE): set \"passes\": true and add \"completionNotes\" for the task you completed.
-11. Output: <promise>COMPLETE</promise>
-ONLY DO ONE TASK AT A TIME."
-    exit 0
+   - If multiple tasks qualify, pick the one with the lowest ID"
+else
+    SELECTION_INSTRUCTIONS="1. Review the issues and progress file.
+2. Find the next issue to work on (pick the lowest numbered issue not marked as done in progress.txt)."
 fi
 
-# ============================================================
-# GITHUB MODE
-# ============================================================
-echo "Working on repo: $REPO"
-echo "Commit mode: $COMMIT_MODE"
+# --- IMPLEMENTATION: Core work steps (same for both modes) ---
+IMPLEMENTATION_INSTRUCTIONS="3. Implement the changes needed to complete the $TASK_ITEM.
+4. Run the test suite and linter. Fix any failures or quality issues before proceeding."
 
-# Fetch open issues from the repo
-if ! ISSUES=$(gh issue list --repo "$REPO" --state open --limit 20 --json number,title,body,labels); then
-    echo "Error: Failed to fetch issues from $REPO"
-    exit 1
+# --- GAPS: How to record missing items ---
+if [ "$MODE" = "prd" ]; then
+    GAPS_INSTRUCTIONS="5. If you discover anything critically missing, note it in progress.txt (max 2 items)."
+else
+    GAPS_INSTRUCTIONS="5. If you discover anything critically missing, raise an issue for it (max 2 issues)."
 fi
 
-if [ -z "$ISSUES" ] || [ "$ISSUES" = "[]" ]; then
-    echo "No open issues found in $REPO"
-    exit 0
-fi
-
+# --- COMMIT: How to save work ---
 case "$COMMIT_MODE" in
     pr)
         COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, commit your changes with a well-written commit message following guidance in AGENTS.md
-7. Raise a pull request with a title and description referencing the issue, and share the link.
+7. Raise a pull request with a title and description referencing the $TASK_ITEM, and share the link.
 8. Wait for PR status checks to pass. If they fail, fix the issues and push again."
         ;;
     main)
@@ -345,8 +323,13 @@ case "$COMMIT_MODE" in
 7. Do NOT push - leave the commit local for review."
         ;;
     branch)
-        COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, create a new branch with a sensible name based on the issue (e.g., feature/123-issue-title) and commit your changes with a well-written commit message following guidance in AGENTS.md
+        if [ "$MODE" = "prd" ] && [ -n "$PRD_BRANCH" ]; then
+            COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, create or switch to branch '$PRD_BRANCH' and commit your changes with a well-written commit message following guidance in AGENTS.md
 7. Do NOT push - leave the branch local for review."
+        else
+            COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, create a new branch with a sensible name based on the $TASK_ITEM (e.g., feature/123-$TASK_ITEM-title) and commit your changes with a well-written commit message following guidance in AGENTS.md
+7. Do NOT push - leave the branch local for review."
+        fi
         ;;
     none)
         COMMIT_INSTRUCTIONS="6. ONLY when all checks are passing, leave all files unstaged. Do NOT commit or push anything.
@@ -354,21 +337,30 @@ case "$COMMIT_MODE" in
         ;;
 esac
 
-opencode --prompt "
-Here are the open GitHub issues for $REPO:
+# --- COMPLETION: How to finish up ---
+if [ "$MODE" = "prd" ]; then
+    COMPLETION_INSTRUCTIONS="9. Update progress.txt with what you did, including the task ID.
+10. Update the PRD file ($PRD_FILE): set \"passes\": true and add \"completionNotes\" for the task you completed.
+11. Output: <promise>COMPLETE</promise>
+ONLY DO ONE TASK AT A TIME."
+else
+    COMPLETION_INSTRUCTIONS="9. Update progress.txt with what you did, including the issue number.
+10. Output: <promise>COMPLETE</promise>
+ONLY DO ONE ISSUE AT A TIME."
+fi
 
-$ISSUES
+# ============================================================
+# RUN OPENCODE WITH ASSEMBLED PROMPT
+# ============================================================
+opencode --prompt "
+$TASK_CONTEXT
 
 And here is the progress file (progress.txt):
 
 $PROGRESS
 
-1. Review the issues and progress file.
-2. Find the next issue to work on (pick the lowest numbered issue not marked as done in progress.txt).
-3. Implement the changes needed to resolve the issue.
-4. Run the test suite and linter. Fix any failures or quality issues before proceeding.
-5. If you discover anything critically missing, raise an issue for it (max 2 issues).
+$SELECTION_INSTRUCTIONS
+$IMPLEMENTATION_INSTRUCTIONS
+$GAPS_INSTRUCTIONS
 $COMMIT_INSTRUCTIONS
-9. Update progress.txt with what you did, including the issue number.
-10. Output: <promise>COMPLETE</promise>
-ONLY DO ONE ISSUE AT A TIME."
+$COMPLETION_INSTRUCTIONS"
