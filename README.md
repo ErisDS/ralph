@@ -11,6 +11,30 @@ Ralph works with either GitHub issues or a PRD (Product Requirements Document) f
 - `jq` - JSON processor (for PRD mode)
 - `opencode` - AI coding CLI
 
+## Installation
+
+Clone the repository and add it to your PATH:
+
+```bash
+git clone https://github.com/ErisDS/ralph.git ~/.ralph
+
+# Add to your shell config (~/.bashrc, ~/.zshrc, etc.)
+export PATH="$HOME/.ralph:$PATH"
+```
+
+Alternatively, symlink to a directory already in your PATH:
+
+```bash
+git clone https://github.com/ErisDS/ralph.git ~/path/to/ralph
+ln -s ~/path/to/ralph/ralph-once.sh /usr/local/bin/ralph-once
+```
+
+Then run from any project directory:
+
+```bash
+ralph-once.sh
+```
+
 ## Usage
 
 The simplest way to use Ralph is to run it without arguments in your project directory:
