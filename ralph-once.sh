@@ -57,7 +57,7 @@ interactive_setup() {
         1)
             MODE="github"
             # Try to detect repo from git remote
-            DETECTED_REPO=$(git remote get-url origin 2>/dev/null | sed -E 's/.*github\.com[:\\/]([^\\/]+\\/[^\\/]+)(\.git)?$/\1/' || echo "")
+            DETECTED_REPO=$(git remote get-url origin 2>/dev/null | sed -E 's|.*github\.com[:/]([^/]+/[^/]+)(\.git)?$|\1|' || echo "")
             if [ -n "$DETECTED_REPO" ]; then
                 read -p "GitHub repo [$DETECTED_REPO]: " REPO
                 [ -z "$REPO" ] && REPO="$DETECTED_REPO"
