@@ -40,7 +40,7 @@ EOF
 }
 
 detect_github_repo() {
-    git remote get-url origin 2>/dev/null | sed -E 's|.*github\.com[:/]([^/]+/[^/]+)(\.git)?$|\1|' || echo ""
+    git remote get-url origin 2>/dev/null | sed -E 's|.*github\.com[:/]||; s|\.git$||' || echo ""
 }
 
 interactive_setup() {
