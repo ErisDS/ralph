@@ -43,6 +43,11 @@ detect_github_repo() {
     git remote get-url origin 2>/dev/null | sed -E 's|.*github\.com[:/]||; s|\.git$||' || echo ""
 }
 
+# Normalize repo to owner/repo format, handling URLs, .git suffix, etc.
+normalize_repo() {
+    echo "$1" | sed -E 's|^https?://||; s|.*github\.com[:/]||; s|\.git$||; s|/$||'
+}
+
 interactive_setup() {
     echo "Welcome to Ralph! Let's set up your project."
     echo ""
@@ -186,12 +191,15 @@ fi
 [ -z "$COMMIT_MODE" ] && COMMIT_MODE="pr"
 [ -z "$AGENT" ] && AGENT="opencode"
 
+# Normalize repo (handles URLs, .git suffix, typos)
+[ -n "$REPO" ] && REPO=$(normalize_repo "$REPO")
+
 # ============================================================
 # VALIDATION
 # ============================================================
 validate_github_mode() {
     [ -z "$REPO" ] && { echo "Error: No repository specified"; exit 1; }
-    local remote=$(git remote get-url origin 2>/dev/null || echo "")
+    local remote=$(normalize_repo "$(git remote get-url origin 2>/dev/null || echo "")")
     [[ "$remote" =~ "$REPO" ]] || { echo "Error: Current directory doesn't appear to be a clone of $REPO"; echo "Remote URL: $remote"; exit 1; }
 }
 
