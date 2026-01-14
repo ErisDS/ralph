@@ -176,16 +176,30 @@ done
 # Must be in a git repo
 git rev-parse --git-dir > /dev/null 2>&1 || { echo "Error: Not in a git repository"; exit 1; }
 
+# Save flag values (flags should override config)
+FLAG_MODE="$MODE"
+FLAG_REPO="$REPO"
+FLAG_PRD_FILE="$PRD_FILE"
+FLAG_COMMIT_MODE="$COMMIT_MODE"
+FLAG_AGENT="$AGENT"
+
 # Load or create config
 if [ "$FORCE_SETUP" = true ]; then
     interactive_setup
-elif [ -z "$MODE" ]; then
+elif [ -z "$FLAG_MODE" ]; then
     if load_config && [ -n "$MODE" ]; then
         echo "Loaded config from $CONFIG_FILE"
     else
         interactive_setup
     fi
 fi
+
+# Flags override config
+[ -n "$FLAG_MODE" ] && MODE="$FLAG_MODE"
+[ -n "$FLAG_REPO" ] && REPO="$FLAG_REPO"
+[ -n "$FLAG_PRD_FILE" ] && PRD_FILE="$FLAG_PRD_FILE"
+[ -n "$FLAG_COMMIT_MODE" ] && COMMIT_MODE="$FLAG_COMMIT_MODE"
+[ -n "$FLAG_AGENT" ] && AGENT="$FLAG_AGENT"
 
 # Defaults
 [ -z "$COMMIT_MODE" ] && COMMIT_MODE="pr"
