@@ -366,6 +366,6 @@ $COMPLETION_INSTRUCTIONS"
 
 case "$AGENT" in
     opencode) opencode --prompt "$PROMPT" ;;
-    claude)   claude -p "$PROMPT" ;;
+    claude)   claude "$PROMPT" ;;
     *)        echo "Error: Unknown agent '$AGENT'"; exit 1 ;;
 esac
