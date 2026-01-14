@@ -165,6 +165,10 @@ When a task is completed, Ralph updates the PRD file to set `passes: true` and a
 
 Ralph maintains a `progress.txt` file in the repository root to track completed work. This file is used to avoid re-working completed tasks.
 
+## Contributing
+
+Feel free to open an issue with a prompt you'd like me to run to improve this codebase.
+
 ## Why "Ralph"?
 
 Named after Ralph Wiggum - it tries its best, one task at a time.

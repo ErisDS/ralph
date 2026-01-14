@@ -1,6 +1,7 @@
 #!/bin/bash
 set -e
 
+VERSION="1.0.0"
 CONFIG_DIR=".ralph"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 
@@ -164,6 +165,7 @@ while [[ $# -gt 0 ]]; do
         --claude)      AGENT="claude"; shift ;;
         --setup)       FORCE_SETUP=true; shift ;;
         -h|--help)     show_usage; exit 0 ;;
+        -v|--version)  echo "ralph-once $VERSION"; exit 0 ;;
         -*)            echo "Unknown option: $1"; show_usage; exit 1 ;;
         *)             [ -z "$REPO" ] && MODE="github" && REPO="$1"; shift ;;
     esac
@@ -172,6 +174,14 @@ done
 # ============================================================
 # INITIALIZATION
 # ============================================================
+
+# Check dependencies
+check_dependency() {
+    command -v "$1" > /dev/null 2>&1 || { echo "Error: '$1' is required but not installed."; exit 1; }
+}
+
+check_dependency git
+check_dependency jq
 
 # Must be in a git repo
 git rev-parse --git-dir > /dev/null 2>&1 || { echo "Error: Not in a git repository"; exit 1; }
@@ -363,6 +373,8 @@ $IMPLEMENTATION_INSTRUCTIONS
 $GAPS_INSTRUCTIONS
 $COMMIT_INSTRUCTIONS
 $COMPLETION_INSTRUCTIONS"
+
+check_dependency "$AGENT"
 
 case "$AGENT" in
     opencode) opencode --prompt "$PROMPT" ;;

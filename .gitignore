@@ -1,0 +1,15 @@
+# Ralph config (project-specific, not for the ralph repo itself)
+.ralph/
+
+# Progress file (project-specific)
+progress.txt
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
