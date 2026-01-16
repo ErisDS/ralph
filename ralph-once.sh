@@ -278,9 +278,10 @@ Tasks with \"passes\": false are incomplete. A task can only be worked on if all
 
     GAPS_INSTRUCTIONS="5. If you discover anything critically missing, note it in progress.txt (max 2 items)."
 
-    COMPLETION_INSTRUCTIONS="9. Update progress.txt with what you did, including the task ID.
-10. Update the PRD file ($PRD_FILE): set \"passes\": true and add \"completionNotes\" for the task you completed.
-11. Output: <promise>COMPLETE</promise>
+    PRE_COMMIT_INSTRUCTIONS="6. Update progress.txt with what you did, including the task ID.
+7. Update the PRD file ($PRD_FILE): set \"passes\": true and add \"completionNotes\" for the task you completed."
+
+    COMPLETION_INSTRUCTIONS="Output: <promise>COMPLETE</promise>
 ONLY DO ONE TASK AT A TIME."
 
     TASK_ITEM="task"
@@ -303,8 +304,9 @@ Issues marked as done in progress.txt should not be worked on again."
 
     GAPS_INSTRUCTIONS="5. If you discover anything critically missing, raise an issue for it (max 2 issues)."
 
-    COMPLETION_INSTRUCTIONS="9. Update progress.txt with what you did, including the issue number.
-10. Output: <promise>COMPLETE</promise>
+    PRE_COMMIT_INSTRUCTIONS="6. Update progress.txt with what you did, including the issue number."
+
+    COMPLETION_INSTRUCTIONS="Output: <promise>COMPLETE</promise>
 ONLY DO ONE ISSUE AT A TIME."
 
     TASK_ITEM="issue"
@@ -336,34 +338,34 @@ IMPLEMENTATION_INSTRUCTIONS="3. Implement the changes needed to complete the $TA
 
 # --- COMMIT: How to save work ---
 build_commit_instructions() {
-    local base="6. ONLY when all checks are passing,"
+    local base="8. ONLY when all checks are passing, stage ALL modified files (including progress.txt and any PRD files) and"
     
     case "$COMMIT_MODE" in
         pr)
             echo "$base commit your changes with a well-written commit message following guidance in AGENTS.md
-7. Raise a pull request with a title and description referencing the $TASK_ITEM, and share the link.
-8. Wait for PR status checks to pass. If they fail, fix the issues and push again."
+9. Raise a pull request with a title and description referencing the $TASK_ITEM, and share the link.
+10. Wait for PR status checks to pass. If they fail, fix the issues and push again."
             ;;
         main)
             echo "$base commit your changes to main with a well-written commit message following guidance in AGENTS.md
-7. Push your commit to origin."
+9. Push your commit to origin."
             ;;
         commit)
             echo "$base commit your changes to main with a well-written commit message following guidance in AGENTS.md
-7. Do NOT push - leave the commit local for review."
+9. Do NOT push - leave the commit local for review."
             ;;
         branch)
             if [ "$MODE" = "prd" ] && [ -n "$PRD_BRANCH" ]; then
                 echo "$base create or switch to branch '$PRD_BRANCH' and commit your changes with a well-written commit message following guidance in AGENTS.md
-7. Do NOT push - leave the branch local for review."
+9. Do NOT push - leave the branch local for review."
             else
                 echo "$base create a new branch with a sensible name based on the $TASK_ITEM (e.g., feature/123-$TASK_ITEM-title) and commit your changes with a well-written commit message following guidance in AGENTS.md
-7. Do NOT push - leave the branch local for review."
+9. Do NOT push - leave the branch local for review."
             fi
             ;;
         none)
             echo "$base leave all files unstaged. Do NOT commit or push anything.
-7. Report what files were changed so they can be reviewed."
+9. Report what files were changed so they can be reviewed."
             ;;
     esac
 }
@@ -383,6 +385,7 @@ $PROGRESS
 $SELECTION_INSTRUCTIONS
 $IMPLEMENTATION_INSTRUCTIONS
 $GAPS_INSTRUCTIONS
+$PRE_COMMIT_INSTRUCTIONS
 $COMMIT_INSTRUCTIONS
 $COMPLETION_INSTRUCTIONS"
 
