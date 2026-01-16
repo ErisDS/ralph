@@ -125,6 +125,8 @@ If no arguments are provided and no config exists, Ralph will
 interactively ask for your preferences and save them.
 
 Options:
+  --task <n>  Work on a specific task/issue number
+  --issue <n> Alias for --task
   --pr        Raise a PR and wait for checks
   --main      Commit directly to main branch and push
   --commit    Commit to main but don't push
@@ -140,6 +142,8 @@ Examples:
   ralph-once.sh --prd ./tasks/prd.json   # PRD file mode
   ralph-once.sh --claude --prd ./prd.json # Use claude with PRD
   ralph-once.sh --setup                  # Re-run interactive setup
+  ralph-once.sh --task 42                # Work on task/issue #42
+  ralph-once.sh --issue 15 myorg/repo    # Work on issue #15 from repo
 EOF
 }
 
@@ -152,10 +156,12 @@ PRD_FILE=""
 COMMIT_MODE=""
 AGENT=""
 FORCE_SETUP=false
+SPECIFIC_TASK=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
         --prd)         MODE="prd"; PRD_FILE="$2"; shift 2 ;;
+        --task|--issue) SPECIFIC_TASK="$2"; shift 2 ;;
         --pr)          COMMIT_MODE="pr"; shift ;;
         --main)        COMMIT_MODE="main"; shift ;;
         --commit)      COMMIT_MODE="commit"; shift ;;
@@ -313,10 +319,16 @@ echo "Commit mode: $COMMIT_MODE"
 echo "Agent: $AGENT"
 
 # --- SELECTION: How to choose the next task (same for all modes) ---
-SELECTION_INSTRUCTIONS="1. Review the available ${TASK_ITEM}s and the progress file.
+if [ -n "$SPECIFIC_TASK" ]; then
+    SELECTION_INSTRUCTIONS="1. Work on $TASK_ITEM #$SPECIFIC_TASK specifically.
+2. Do NOT pick a different $TASK_ITEM - you must work on #$SPECIFIC_TASK."
+    echo "Targeting specific $TASK_ITEM: #$SPECIFIC_TASK"
+else
+    SELECTION_INSTRUCTIONS="1. Review the available ${TASK_ITEM}s and the progress file.
 2. Find the next $TASK_ITEM to work on:
    - Pick the lowest-numbered $TASK_ITEM that is available to be worked on
    - Use your judgment if one seems more urgent or foundational than others"
+fi
 
 # --- IMPLEMENTATION: Core work steps (same for all modes) ---
 IMPLEMENTATION_INSTRUCTIONS="3. Implement the changes needed to complete the $TASK_ITEM.
