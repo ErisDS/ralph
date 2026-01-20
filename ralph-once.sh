@@ -24,19 +24,21 @@ load_config() {
     REPO=$(json_value '.repo')
     PRD_FILE=$(json_value '.prdFile')
     AGENT=$(json_value '.agent')
+    PR_RULES=$(json_value '.prRules')
 }
 
 save_config() {
     mkdir -p "$CONFIG_DIR"
-    cat > "$CONFIG_FILE" << EOF
-{
-  "mode": "$MODE",
-  "commitMode": "$COMMIT_MODE",
-  "repo": "$REPO",
-  "prdFile": "$PRD_FILE",
-  "agent": "$AGENT"
-}
-EOF
+    # Build JSON, omitting empty optional fields
+    local json="{"
+    json="$json\n  \"mode\": \"$MODE\","
+    json="$json\n  \"commitMode\": \"$COMMIT_MODE\","
+    [ -n "$REPO" ] && json="$json\n  \"repo\": \"$REPO\","
+    [ -n "$PRD_FILE" ] && json="$json\n  \"prdFile\": \"$PRD_FILE\","
+    [ -n "$PR_RULES" ] && json="$json\n  \"prRules\": \"$PR_RULES\","
+    json="$json\n  \"agent\": \"$AGENT\""
+    json="$json\n}"
+    echo -e "$json" > "$CONFIG_FILE"
     echo "Configuration saved to $CONFIG_FILE"
 }
 
@@ -99,6 +101,12 @@ interactive_setup() {
         *) echo "Invalid choice"; exit 1 ;;
     esac
     
+    if [ "$COMMIT_MODE" = "pr" ]; then
+        echo ""
+        echo "Any extra rules for PR review? (e.g., 'Wait for review from @alice', 'Ensure deploy preview is green')"
+        read -p "PR rules (leave blank for none): " PR_RULES
+    fi
+    
     echo ""
     echo "Which AI agent should Ralph use?"
     echo "  1) opencode (default)"
@@ -125,16 +133,17 @@ If no arguments are provided and no config exists, Ralph will
 interactively ask for your preferences and save them.
 
 Options:
-  --task <n>  Work on a specific task/issue number
-  --issue <n> Alias for --task
-  --pr        Raise a PR and wait for checks
-  --main      Commit directly to main branch and push
-  --commit    Commit to main but don't push
-  --branch    Create a branch and commit (no push)
-  --none      Don't commit, leave files unstaged
-  --opencode  Use opencode as the AI agent (default)
-  --claude    Use claude as the AI agent
-  --setup     Force interactive setup (overwrites existing config)
+  --task <n>      Work on a specific task/issue number
+  --issue <n>     Alias for --task
+  --pr            Raise a PR and wait for checks
+  --pr-rules <s>  Extra rules for PR mode (e.g., "Wait for review from @alice")
+  --main          Commit directly to main branch and push
+  --commit        Commit to main but don't push
+  --branch        Create a branch and commit (no push)
+  --none          Don't commit, leave files unstaged
+  --opencode      Use opencode as the AI agent (default)
+  --claude        Use claude as the AI agent
+  --setup         Force interactive setup (overwrites existing config)
 
 Examples:
   ralph-once.sh                          # Use saved config or run setup
@@ -155,6 +164,7 @@ REPO=""
 PRD_FILE=""
 COMMIT_MODE=""
 AGENT=""
+PR_RULES=""
 FORCE_SETUP=false
 SPECIFIC_TASK=""
 
@@ -163,6 +173,7 @@ while [[ $# -gt 0 ]]; do
         --prd)         MODE="prd"; PRD_FILE="$2"; shift 2 ;;
         --task|--issue) SPECIFIC_TASK="$2"; shift 2 ;;
         --pr)          COMMIT_MODE="pr"; shift ;;
+        --pr-rules)    PR_RULES="$2"; shift 2 ;;
         --main)        COMMIT_MODE="main"; shift ;;
         --commit)      COMMIT_MODE="commit"; shift ;;
         --branch)      COMMIT_MODE="branch"; shift ;;
@@ -198,6 +209,7 @@ FLAG_REPO="$REPO"
 FLAG_PRD_FILE="$PRD_FILE"
 FLAG_COMMIT_MODE="$COMMIT_MODE"
 FLAG_AGENT="$AGENT"
+FLAG_PR_RULES="$PR_RULES"
 
 # Load or create config
 if [ "$FORCE_SETUP" = true ]; then
@@ -216,6 +228,7 @@ fi
 [ -n "$FLAG_PRD_FILE" ] && PRD_FILE="$FLAG_PRD_FILE"
 [ -n "$FLAG_COMMIT_MODE" ] && COMMIT_MODE="$FLAG_COMMIT_MODE"
 [ -n "$FLAG_AGENT" ] && AGENT="$FLAG_AGENT"
+[ -n "$FLAG_PR_RULES" ] && PR_RULES="$FLAG_PR_RULES"
 
 # Defaults
 [ -z "$COMMIT_MODE" ] && COMMIT_MODE="pr"
@@ -342,9 +355,12 @@ build_commit_instructions() {
     
     case "$COMMIT_MODE" in
         pr)
-            echo "$base commit your changes with a well-written commit message following guidance in AGENTS.md
+            local pr_instructions="$base commit your changes with a well-written commit message following guidance in AGENTS.md
 9. Raise a pull request with a title and description referencing the $TASK_ITEM, and share the link.
 10. Wait for PR status checks to pass. If they fail, fix the issues and push again."
+            [ -n "$PR_RULES" ] && pr_instructions="$pr_instructions
+11. $PR_RULES"
+            echo "$pr_instructions"
             ;;
         main)
             echo "$base commit your changes to main with a well-written commit message following guidance in AGENTS.md
