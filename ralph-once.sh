@@ -349,7 +349,7 @@ if [ "$COMMIT_MODE" = "pr" ]; then
     # PR mode: 1-2 select, 3 branch, 4-5 implement, 6 pre-commit, 7 commit, 8 PR, 9 wait, 10+ custom
     BRANCH_INSTRUCTIONS="3. Create a feature branch with a sensible name based on the $TASK_ITEM (e.g., feature/123-short-description) and switch to it."
     
-    IMPLEMENTATION_INSTRUCTIONS="4. Implement the changes needed to complete the $TASK_ITEM.
+    IMPLEMENTATION_INSTRUCTIONS="4. Implement the changes needed to complete the $TASK_ITEM, ensuring that you are manually testing your work as you go.
 5. Run the test suite and linter. Fix any failures or quality issues before proceeding."
     
     PRE_COMMIT_INSTRUCTIONS="6. $PRE_COMMIT_INSTRUCTIONS_BASE"
@@ -363,7 +363,7 @@ else
     # Non-PR modes: 1-2 select, 3-4 implement, 5 pre-commit, 6 commit, 7 next step
     BRANCH_INSTRUCTIONS=""
     
-    IMPLEMENTATION_INSTRUCTIONS="3. Implement the changes needed to complete the $TASK_ITEM.
+    IMPLEMENTATION_INSTRUCTIONS="3. Implement the changes needed to complete the $TASK_ITEM, ensuring that you are manually testing your work as you go.
 4. Run the test suite and linter. Fix any failures or quality issues before proceeding."
     
     PRE_COMMIT_INSTRUCTIONS="5. $PRE_COMMIT_INSTRUCTIONS_BASE"
