@@ -305,6 +305,9 @@ fetch_github_tasks() {
         echo "Error: Failed to fetch issues from $REPO"; exit 1
     }
     
+    # Filter out Renovate's Dependency Dashboard issue
+    ISSUES=$(echo "$ISSUES" | jq '[.[] | select(.title | contains("Dependency Dashboard") | not)]')
+    
     [ -z "$ISSUES" ] || [ "$ISSUES" = "[]" ] && { echo "No open issues found in $REPO"; exit 0; }
     
     TASK_CONTEXT="Here are the open GitHub issues for $REPO:
