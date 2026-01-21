@@ -289,9 +289,8 @@ $PRD_CONTENT
 
 Tasks with \"passes\": false are incomplete. A task can only be worked on if all its dependencies (dependsOn) are complete."
 
-    # Step numbers are adjusted later based on commit mode (PR mode adds a branching step)
-    PRE_COMMIT_INSTRUCTIONS_BASE="Update progress.txt with what you did, including the task ID.
-- Update the PRD file ($PRD_FILE): set \"passes\": true and add \"completionNotes\" for the task you completed."
+    # Used to build pre-commit instructions - includes PRD-specific updates
+    PRE_COMMIT_EXTRA="Also update the PRD file ($PRD_FILE): set \"passes\": true and add \"completionNotes\" for the task you completed."
 
     COMPLETION_INSTRUCTIONS="Output: <promise>COMPLETE</promise>
 ONLY DO ONE TASK AT A TIME."
@@ -314,8 +313,8 @@ $ISSUES
 
 Issues marked as done in progress.txt should not be worked on again."
 
-    # Step numbers are adjusted later based on commit mode (PR mode adds a branching step)
-    PRE_COMMIT_INSTRUCTIONS_BASE="Update progress.txt with what you did, including the issue number."
+    # No extra pre-commit instructions for GitHub mode
+    PRE_COMMIT_EXTRA=""
 
     COMPLETION_INSTRUCTIONS="Output: <promise>COMPLETE</promise>
 ONLY DO ONE ISSUE AT A TIME."
@@ -346,50 +345,45 @@ fi
 # --- BUILD NUMBERED INSTRUCTIONS based on commit mode ---
 # PR mode adds a branching step, shifting all subsequent numbers by 1
 if [ "$COMMIT_MODE" = "pr" ]; then
-    # PR mode: 1-2 select, 3 branch, 4-5 implement, 6 pre-commit, 7 commit, 8 PR, 9 wait, 10+ custom
+    # PR mode: 1-2 select, 3 branch, 4 implement, 5-6 pre-commit, 7 PR, 8 wait, 9+ custom
     BRANCH_INSTRUCTIONS="3. Create a feature branch with a sensible name based on the $TASK_ITEM (e.g., feature/123-short-description) and switch to it."
     
-    IMPLEMENTATION_INSTRUCTIONS="4. Implement the changes needed to complete the $TASK_ITEM, ensuring that you are manually testing your work as you go.
-5. Run the test suite and linter. Fix any failures or quality issues before proceeding."
+    IMPLEMENTATION_INSTRUCTIONS="4. Implement the changes needed to complete the $TASK_ITEM, using feedback loops to verify your changes are working as intended (automated and manual testing)."
     
-    PRE_COMMIT_INSTRUCTIONS="6. $PRE_COMMIT_INSTRUCTIONS_BASE"
+    PRE_COMMIT_INSTRUCTIONS="5. ONLY when you're absolutely certain your code is working as intended and all available automated checks are passing, update progress.txt with what you did, including the $TASK_ITEM number.${PRE_COMMIT_EXTRA:+ $PRE_COMMIT_EXTRA}
+6. Stage ALL modified files (including progress.txt and any PRD files) and commit your changes with a well-written commit message following guidance in AGENTS.md"
     
-    COMMIT_INSTRUCTIONS="7. ONLY when all checks are passing, stage ALL modified files (including progress.txt and any PRD files) and commit your changes with a well-written commit message following guidance in AGENTS.md
-8. Push your branch and raise a pull request with a title and description referencing the $TASK_ITEM, and share the link.
-9. Wait for PR status checks to pass. If they fail, fix the issues and push again."
+    COMMIT_INSTRUCTIONS="7. Push your branch and raise a pull request with a title and description referencing the $TASK_ITEM, and share the link.
+8. Wait for PR status checks to pass. If they fail, fix the issues and push again."
     [ -n "$PR_RULES" ] && COMMIT_INSTRUCTIONS="$COMMIT_INSTRUCTIONS
-10. $PR_RULES"
+9. $PR_RULES"
 else
-    # Non-PR modes: 1-2 select, 3-4 implement, 5 pre-commit, 6 commit, 7 next step
+    # Non-PR modes: 1-2 select, 3 implement, 4-5 pre-commit, 6 next step
     BRANCH_INSTRUCTIONS=""
     
-    IMPLEMENTATION_INSTRUCTIONS="3. Implement the changes needed to complete the $TASK_ITEM, ensuring that you are manually testing your work as you go.
-4. Run the test suite and linter. Fix any failures or quality issues before proceeding."
+    IMPLEMENTATION_INSTRUCTIONS="3. Implement the changes needed to complete the $TASK_ITEM, using feedback loops to verify your changes are working as intended (automated and manual testing)."
     
-    PRE_COMMIT_INSTRUCTIONS="5. $PRE_COMMIT_INSTRUCTIONS_BASE"
+    PRE_COMMIT_INSTRUCTIONS="4. ONLY when you're absolutely certain your code is working as intended and all available automated checks are passing, update progress.txt with what you did, including the $TASK_ITEM number.${PRE_COMMIT_EXTRA:+ $PRE_COMMIT_EXTRA}
+5. Stage ALL modified files (including progress.txt and any PRD files) and commit your changes with a well-written commit message following guidance in AGENTS.md"
     
-    COMMIT_BASE="6. ONLY when all checks are passing, stage ALL modified files (including progress.txt and any PRD files) and"
     case "$COMMIT_MODE" in
         main)
-            COMMIT_INSTRUCTIONS="$COMMIT_BASE commit your changes to main with a well-written commit message following guidance in AGENTS.md
-7. Push your commit to origin."
+            COMMIT_INSTRUCTIONS="6. Push your commit to origin."
             ;;
         commit)
-            COMMIT_INSTRUCTIONS="$COMMIT_BASE commit your changes to main with a well-written commit message following guidance in AGENTS.md
-7. Do NOT push - leave the commit local for review."
+            COMMIT_INSTRUCTIONS="6. Do NOT push - leave the commit local for review."
             ;;
         branch)
             if [ "$MODE" = "prd" ] && [ -n "$PRD_BRANCH" ]; then
-                COMMIT_INSTRUCTIONS="$COMMIT_BASE create or switch to branch '$PRD_BRANCH' and commit your changes with a well-written commit message following guidance in AGENTS.md
-7. Do NOT push - leave the branch local for review."
+                COMMIT_INSTRUCTIONS="5. Create or switch to branch '$PRD_BRANCH' and commit your changes with a well-written commit message following guidance in AGENTS.md
+6. Do NOT push - leave the branch local for review."
             else
-                COMMIT_INSTRUCTIONS="$COMMIT_BASE create a new branch with a sensible name based on the $TASK_ITEM (e.g., feature/123-$TASK_ITEM-title) and commit your changes with a well-written commit message following guidance in AGENTS.md
-7. Do NOT push - leave the branch local for review."
+                COMMIT_INSTRUCTIONS="5. Create a new branch with a sensible name based on the $TASK_ITEM (e.g., feature/123-$TASK_ITEM-title) and commit your changes with a well-written commit message following guidance in AGENTS.md
+6. Do NOT push - leave the branch local for review."
             fi
             ;;
         none)
-            COMMIT_INSTRUCTIONS="$COMMIT_BASE leave all files unstaged. Do NOT commit or push anything.
-7. Report what files were changed so they can be reviewed."
+            COMMIT_INSTRUCTIONS="6. Do NOT commit or push anything. Report what files were changed so they can be reviewed."
             ;;
     esac
 fi
