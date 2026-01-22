@@ -381,80 +381,151 @@ esac
 echo "Commit mode: $COMMIT_MODE"
 echo "Agent: $AGENT"
 
-# --- SELECTION: How to choose the next task (same for all modes) ---
+# ============================================================
+# BUILD STRUCTURED PROMPT
+# ============================================================
+
+# --- SECTION 1: CHOOSE THE TASK ---
 if [ -n "$SPECIFIC_TASK" ]; then
-    SELECTION_INSTRUCTIONS="1. Work on $TASK_ITEM #$SPECIFIC_TASK specifically.
-2. Do NOT pick a different $TASK_ITEM - you must work on #$SPECIFIC_TASK."
+    SECTION_CHOOSE="## 1. Choose the Task
+
+Work on $TASK_ITEM #$SPECIFIC_TASK specifically. Do NOT pick a different $TASK_ITEM."
     echo "Targeting specific $TASK_ITEM: #$SPECIFIC_TASK"
 else
-    SELECTION_INSTRUCTIONS="1. Review the available ${TASK_ITEM}s and the progress file.
-2. Find the next $TASK_ITEM to work on:
-   - Pick the lowest-numbered $TASK_ITEM that is available to be worked on
-   - Use your judgment if one seems more urgent or foundational than others"
+    SECTION_CHOOSE="## 1. Choose the Task
+
+Review the available ${TASK_ITEM}s and the progress file, then select ONE to work on:
+- Pick the lowest-numbered $TASK_ITEM that is available
+- Skip any already marked done in progress.txt
+- Use your judgment if one seems more urgent or foundational"
 fi
 
-# --- BUILD NUMBERED INSTRUCTIONS based on commit mode ---
-# PR mode adds a branching step, shifting all subsequent numbers by 1
+# --- SECTION 2: IMPLEMENT WITH FEEDBACK LOOPS ---
+SECTION_IMPLEMENT="## 2. Implement the Task
+
+Work through the $TASK_ITEM systematically, using feedback loops to verify correctness at each step.
+
+### Available Feedback Loops
+Use these to verify your changes are working:
+- **Automated tests**: Run the test suite frequently as you make changes
+- **Linter/Type checker**: Check for code quality issues and type errors  
+- **Manual testing**: Test the actual behavior in a browser/terminal/REPL
+- **Build**: Ensure the project compiles/builds without errors
+- **AGENTS.md**: Check for project-specific standards, commands, and guidelines
+
+### Implementation Approach
+1. Understand the requirements fully before writing code
+2. Make incremental changes, testing after each significant change
+3. If tests exist, run them early and often
+4. If no tests exist for your changes, consider adding them
+5. Verify the fix/feature works manually, not just that tests pass"
+
+# --- SECTION 3: DEFINITION OF DONE ---
 if [ "$COMMIT_MODE" = "pr" ]; then
-    # PR mode: 1-2 select, 3 branch, 4 implement, 5-6 pre-commit, 7 PR, 8 wait, 9+ custom
-    BRANCH_INSTRUCTIONS="3. Create a feature branch with a sensible name based on the $TASK_ITEM (e.g., feature/123-short-description) and switch to it."
-    
-    IMPLEMENTATION_INSTRUCTIONS="4. Implement the changes needed to complete the $TASK_ITEM, using feedback loops to verify your changes are working as intended (automated and manual testing)."
-    
-    PRE_COMMIT_INSTRUCTIONS="5. ONLY when you're absolutely certain your code is working as intended and all available automated checks are passing, update progress.txt with what you did, including the $TASK_ITEM number.${PRE_COMMIT_EXTRA:+ $PRE_COMMIT_EXTRA}
-6. Stage ALL modified files (including progress.txt and any PRD files) and commit your changes with a well-written commit message following guidance in AGENTS.md"
-    
-    COMMIT_INSTRUCTIONS="7. Push your branch and raise a pull request with a title and description referencing the $TASK_ITEM, and share the link.
-8. Wait for PR status checks to pass. If they fail, fix the issues and push again."
-    [ -n "$PR_RULES" ] && COMMIT_INSTRUCTIONS="$COMMIT_INSTRUCTIONS
-9. $PR_RULES"
+    SECTION_DONE="## 3. Definition of Done
+
+You are ONLY done when ALL of the following are true:
+- [ ] All automated tests pass
+- [ ] Linter/type checks pass (if available)
+- [ ] You have manually verified the change works as intended
+- [ ] Code follows project standards (check AGENTS.md)
+- [ ] progress.txt is updated with what you did${PRE_COMMIT_EXTRA:+
+- [ ] $PRE_COMMIT_EXTRA}"
 else
-    # Non-PR modes: 1-2 select, 3 implement, 4-5 pre-commit, 6 next step
-    BRANCH_INSTRUCTIONS=""
-    
-    IMPLEMENTATION_INSTRUCTIONS="3. Implement the changes needed to complete the $TASK_ITEM, using feedback loops to verify your changes are working as intended (automated and manual testing)."
-    
-    PRE_COMMIT_INSTRUCTIONS="4. ONLY when you're absolutely certain your code is working as intended and all available automated checks are passing, update progress.txt with what you did, including the $TASK_ITEM number.${PRE_COMMIT_EXTRA:+ $PRE_COMMIT_EXTRA}
-5. Stage ALL modified files (including progress.txt and any PRD files) and commit your changes with a well-written commit message following guidance in AGENTS.md"
-    
+    SECTION_DONE="## 3. Definition of Done
+
+You are ONLY done when ALL of the following are true:
+- [ ] All automated tests pass
+- [ ] Linter/type checks pass (if available)  
+- [ ] You have manually verified the change works as intended
+- [ ] Code follows project standards (check AGENTS.md)
+- [ ] progress.txt is updated with what you did${PRE_COMMIT_EXTRA:+
+- [ ] $PRE_COMMIT_EXTRA}"
+fi
+
+# --- SECTION 4: DELIVER ---
+if [ "$COMMIT_MODE" = "pr" ]; then
+    DELIVER_STEPS="1. Create a feature branch (e.g., feature/123-short-description)
+2. Stage ALL modified files (including progress.txt and any PRD files)
+3. Commit with a clear message following AGENTS.md guidance
+4. Push and open a pull request referencing the $TASK_ITEM
+5. Wait for CI/status checks to pass - if they fail, fix and push again"
+    [ -n "$PR_RULES" ] && DELIVER_STEPS="$DELIVER_STEPS
+6. $PR_RULES"
+else
     case "$COMMIT_MODE" in
         main)
-            COMMIT_INSTRUCTIONS="6. Push your commit to origin."
+            DELIVER_STEPS="1. Stage ALL modified files (including progress.txt and any PRD files)
+2. Commit to main with a clear message following AGENTS.md guidance
+3. Push to origin"
             ;;
         commit)
-            COMMIT_INSTRUCTIONS="6. Do NOT push - leave the commit local for review."
+            DELIVER_STEPS="1. Stage ALL modified files (including progress.txt and any PRD files)
+2. Commit to main with a clear message following AGENTS.md guidance
+3. Do NOT push - leave the commit local for review"
             ;;
         branch)
             if [ "$MODE" = "prd" ] && [ -n "$PRD_BRANCH" ]; then
-                COMMIT_INSTRUCTIONS="5. Create or switch to branch '$PRD_BRANCH' and commit your changes with a well-written commit message following guidance in AGENTS.md
-6. Do NOT push - leave the branch local for review."
+                DELIVER_STEPS="1. Create or switch to branch '$PRD_BRANCH'
+2. Stage ALL modified files (including progress.txt and any PRD files)
+3. Commit with a clear message following AGENTS.md guidance
+4. Do NOT push - leave the branch local for review"
             else
-                COMMIT_INSTRUCTIONS="5. Create a new branch with a sensible name based on the $TASK_ITEM (e.g., feature/123-$TASK_ITEM-title) and commit your changes with a well-written commit message following guidance in AGENTS.md
-6. Do NOT push - leave the branch local for review."
+                DELIVER_STEPS="1. Create a branch (e.g., feature/123-$TASK_ITEM-title)
+2. Stage ALL modified files (including progress.txt and any PRD files)
+3. Commit with a clear message following AGENTS.md guidance
+4. Do NOT push - leave the branch local for review"
             fi
             ;;
         none)
-            COMMIT_INSTRUCTIONS="6. Do NOT commit or push anything. Report what files were changed so they can be reviewed."
+            DELIVER_STEPS="1. Do NOT commit or push anything
+2. Report what files were changed so they can be reviewed"
             ;;
     esac
 fi
 
+SECTION_DELIVER="## 4. Deliver
+
+ONLY after meeting ALL criteria in 'Definition of Done':
+
+$DELIVER_STEPS
+
+When complete, output: <promise>COMPLETE</promise>"
+
 # ============================================================
-# RUN AGENT
+# ASSEMBLE FINAL PROMPT
 # ============================================================
-PROMPT="
+PROMPT="# Task Assignment
+
 $TASK_CONTEXT
 
-And here is the progress file (progress.txt):
+---
 
+## Progress So Far
+
+\`\`\`
 $PROGRESS
+\`\`\`
 
-$SELECTION_INSTRUCTIONS
-$BRANCH_INSTRUCTIONS
-$IMPLEMENTATION_INSTRUCTIONS
-$PRE_COMMIT_INSTRUCTIONS
-$COMMIT_INSTRUCTIONS
-$COMPLETION_INSTRUCTIONS"
+---
+
+$SECTION_CHOOSE
+
+---
+
+$SECTION_IMPLEMENT
+
+---
+
+$SECTION_DONE
+
+---
+
+$SECTION_DELIVER
+
+---
+
+**IMPORTANT**: Only work on ONE $TASK_ITEM. Do not proceed to the next one."
 
 check_dependency "$AGENT"
 
