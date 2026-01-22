@@ -24,7 +24,7 @@ load_config() {
     REPO=$(json_value '.repo')
     PRD_FILE=$(json_value '.prdFile')
     AGENT=$(json_value '.agent')
-    PR_RULES=$(json_value '.prRules')
+
     AGENT_REVIEW=$(json_value '.agentReview')
 }
 
@@ -36,7 +36,7 @@ save_config() {
     json="$json\n  \"commitMode\": \"$COMMIT_MODE\","
     [ -n "$REPO" ] && json="$json\n  \"repo\": \"$REPO\","
     [ -n "$PRD_FILE" ] && json="$json\n  \"prdFile\": \"$PRD_FILE\","
-    [ -n "$PR_RULES" ] && json="$json\n  \"prRules\": \"$PR_RULES\","
+
     [ -n "$AGENT_REVIEW" ] && json="$json\n  \"agentReview\": \"$AGENT_REVIEW\","
     json="$json\n  \"agent\": \"$AGENT\""
     json="$json\n}"
@@ -105,10 +105,6 @@ interactive_setup() {
     
     if [ "$COMMIT_MODE" = "pr" ]; then
         echo ""
-        echo "Any extra rules for PR review? (e.g., 'Wait for review from @alice', 'Ensure deploy preview is green')"
-        read -p "PR rules (leave blank for none): " PR_RULES
-        
-        echo ""
         echo "Should Ralph wait for an AI code reviewer?"
         echo "  1) None (default)"
         echo "  2) Copilot - Wait for GitHub Copilot review approval"
@@ -151,7 +147,7 @@ Options:
   --task <n>      Work on a specific task/issue number
   --issue <n>     Alias for --task
   --pr            Raise a PR and wait for checks
-  --pr-rules <s>  Extra rules for PR mode (e.g., "Wait for review from @alice")
+
   --copilot       Wait for GitHub Copilot code review approval
   --main          Commit directly to main branch and push
   --commit        Commit to main but don't push
@@ -180,7 +176,7 @@ REPO=""
 PRD_FILE=""
 COMMIT_MODE=""
 AGENT=""
-PR_RULES=""
+
 AGENT_REVIEW=""
 FORCE_SETUP=false
 SPECIFIC_TASK=""
@@ -190,7 +186,7 @@ while [[ $# -gt 0 ]]; do
         --prd)         MODE="prd"; PRD_FILE="$2"; shift 2 ;;
         --task|--issue) SPECIFIC_TASK="$2"; shift 2 ;;
         --pr)          COMMIT_MODE="pr"; shift ;;
-        --pr-rules)    PR_RULES="$2"; shift 2 ;;
+
         --copilot)     AGENT_REVIEW="copilot"; shift ;;
         --main)        COMMIT_MODE="main"; shift ;;
         --commit)      COMMIT_MODE="commit"; shift ;;
@@ -227,7 +223,7 @@ FLAG_REPO="$REPO"
 FLAG_PRD_FILE="$PRD_FILE"
 FLAG_COMMIT_MODE="$COMMIT_MODE"
 FLAG_AGENT="$AGENT"
-FLAG_PR_RULES="$PR_RULES"
+
 FLAG_AGENT_REVIEW="$AGENT_REVIEW"
 
 # Load or create config
@@ -247,7 +243,7 @@ fi
 [ -n "$FLAG_PRD_FILE" ] && PRD_FILE="$FLAG_PRD_FILE"
 [ -n "$FLAG_COMMIT_MODE" ] && COMMIT_MODE="$FLAG_COMMIT_MODE"
 [ -n "$FLAG_AGENT" ] && AGENT="$FLAG_AGENT"
-[ -n "$FLAG_PR_RULES" ] && PR_RULES="$FLAG_PR_RULES"
+
 [ -n "$FLAG_AGENT_REVIEW" ] && AGENT_REVIEW="$FLAG_AGENT_REVIEW"
 
 # Defaults
@@ -473,8 +469,6 @@ if [ "$COMMIT_MODE" = "pr" ]; then
 3. Commit with a clear message following AGENTS.md guidance
 4. Push and open a pull request referencing the $TASK_ITEM
 5. Wait for CI/status checks to pass - if they fail, fix and push again"
-    [ -n "$PR_RULES" ] && DELIVER_STEPS="$DELIVER_STEPS
-6. $PR_RULES"
 else
     case "$COMMIT_MODE" in
         main)
