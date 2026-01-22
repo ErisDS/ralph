@@ -25,6 +25,7 @@ load_config() {
     PRD_FILE=$(json_value '.prdFile')
     AGENT=$(json_value '.agent')
     PR_RULES=$(json_value '.prRules')
+    AGENT_REVIEW=$(json_value '.agentReview')
 }
 
 save_config() {
@@ -36,6 +37,7 @@ save_config() {
     [ -n "$REPO" ] && json="$json\n  \"repo\": \"$REPO\","
     [ -n "$PRD_FILE" ] && json="$json\n  \"prdFile\": \"$PRD_FILE\","
     [ -n "$PR_RULES" ] && json="$json\n  \"prRules\": \"$PR_RULES\","
+    [ -n "$AGENT_REVIEW" ] && json="$json\n  \"agentReview\": \"$AGENT_REVIEW\","
     json="$json\n  \"agent\": \"$AGENT\""
     json="$json\n}"
     echo -e "$json" > "$CONFIG_FILE"
@@ -105,6 +107,19 @@ interactive_setup() {
         echo ""
         echo "Any extra rules for PR review? (e.g., 'Wait for review from @alice', 'Ensure deploy preview is green')"
         read -p "PR rules (leave blank for none): " PR_RULES
+        
+        echo ""
+        echo "Should Ralph wait for an AI code reviewer?"
+        echo "  1) None (default)"
+        echo "  2) Copilot - Wait for GitHub Copilot review approval"
+        echo ""
+        read -p "Choose [1/2]: " review_choice
+        
+        case $review_choice in
+            1|"") AGENT_REVIEW="" ;;
+            2)    AGENT_REVIEW="copilot" ;;
+            *)    echo "Invalid choice"; exit 1 ;;
+        esac
     fi
     
     echo ""
@@ -137,6 +152,7 @@ Options:
   --issue <n>     Alias for --task
   --pr            Raise a PR and wait for checks
   --pr-rules <s>  Extra rules for PR mode (e.g., "Wait for review from @alice")
+  --copilot       Wait for GitHub Copilot code review approval
   --main          Commit directly to main branch and push
   --commit        Commit to main but don't push
   --branch        Create a branch and commit (no push)
@@ -165,6 +181,7 @@ PRD_FILE=""
 COMMIT_MODE=""
 AGENT=""
 PR_RULES=""
+AGENT_REVIEW=""
 FORCE_SETUP=false
 SPECIFIC_TASK=""
 
@@ -174,6 +191,7 @@ while [[ $# -gt 0 ]]; do
         --task|--issue) SPECIFIC_TASK="$2"; shift 2 ;;
         --pr)          COMMIT_MODE="pr"; shift ;;
         --pr-rules)    PR_RULES="$2"; shift 2 ;;
+        --copilot)     AGENT_REVIEW="copilot"; shift ;;
         --main)        COMMIT_MODE="main"; shift ;;
         --commit)      COMMIT_MODE="commit"; shift ;;
         --branch)      COMMIT_MODE="branch"; shift ;;
@@ -210,6 +228,7 @@ FLAG_PRD_FILE="$PRD_FILE"
 FLAG_COMMIT_MODE="$COMMIT_MODE"
 FLAG_AGENT="$AGENT"
 FLAG_PR_RULES="$PR_RULES"
+FLAG_AGENT_REVIEW="$AGENT_REVIEW"
 
 # Load or create config
 if [ "$FORCE_SETUP" = true ]; then
@@ -229,6 +248,7 @@ fi
 [ -n "$FLAG_COMMIT_MODE" ] && COMMIT_MODE="$FLAG_COMMIT_MODE"
 [ -n "$FLAG_AGENT" ] && AGENT="$FLAG_AGENT"
 [ -n "$FLAG_PR_RULES" ] && PR_RULES="$FLAG_PR_RULES"
+[ -n "$FLAG_AGENT_REVIEW" ] && AGENT_REVIEW="$FLAG_AGENT_REVIEW"
 
 # Defaults
 [ -z "$COMMIT_MODE" ] && COMMIT_MODE="pr"
@@ -488,9 +508,41 @@ SECTION_DELIVER="## 4. Deliver
 
 ONLY after meeting ALL criteria in 'Definition of Done':
 
-$DELIVER_STEPS
+$DELIVER_STEPS"
 
-When complete, output: <promise>COMPLETE</promise>"
+# --- SECTION 5: CODE REVIEW (optional, only for PR mode with agent review) ---
+SECTION_REVIEW=""
+if [ "$COMMIT_MODE" = "pr" ] && [ "$AGENT_REVIEW" = "copilot" ]; then
+    SECTION_REVIEW="## 5. Code Review
+
+After opening the PR, you must get approval from GitHub Copilot code review.
+
+### Review Loop
+
+1. **Wait for Copilot review** - Copilot will automatically review your PR
+2. **Address ALL comments** - For each comment:
+   - Fix the issue in your code
+   - Reply directly to the comment explaining what you changed
+   - Mark the comment as resolved
+3. **Request re-review** - After addressing all comments, request a new review:
+   \`\`\`bash
+   gh api -X POST repos/{owner}/{repo}/pulls/{PR_NUMBER}/requested_reviewers \\
+     -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+   \`\`\`
+   Note: \`gh pr edit --add-reviewer Copilot\` does not reliably trigger re-review. Use the API call.
+4. **Iterate** - Repeat this loop until:
+   - Copilot marks the review as **APPROVED**, or
+   - Copilot comments with \"no further comments\"
+
+**Do not stop early. Keep going until fully approved.**"
+fi
+
+# Adjust final completion message based on whether review is required
+if [ -n "$SECTION_REVIEW" ]; then
+    COMPLETION_MESSAGE="When the PR is approved and all checks pass, output: <promise>COMPLETE</promise>"
+else
+    COMPLETION_MESSAGE="When complete, output: <promise>COMPLETE</promise>"
+fi
 
 # ============================================================
 # ASSEMBLE FINAL PROMPT
@@ -524,6 +576,12 @@ $SECTION_DONE
 $SECTION_DELIVER
 
 ---
+${SECTION_REVIEW:+
+$SECTION_REVIEW
+
+---
+}
+$COMPLETION_MESSAGE
 
 **IMPORTANT**: Only work on ONE $TASK_ITEM. Do not proceed to the next one."
 
