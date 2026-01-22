@@ -415,15 +415,15 @@ else
     SECTION_CHOOSE="## 1. Choose the Task
 
 Review the available ${TASK_ITEM}s and the progress file, then select ONE to work on:
-- Pick the lowest-numbered $TASK_ITEM that is available
-- Skip any already marked done in progress.txt
-- Use your judgment if one seems more urgent or foundational"
+- Pick the next best $TASK_ITEM to work on, prioritising as you see fit
+- Fall back to the lowest-numbered $TASK_ITEM if priority isn't clear
+- Skip any already marked done in progress.txt"
 fi
 
 # --- SECTION 2: IMPLEMENT WITH FEEDBACK LOOPS ---
 SECTION_IMPLEMENT="## 2. Implement the Task
 
-Work through the $TASK_ITEM systematically, using feedback loops to verify correctness at each step.
+Work through the $TASK_ITEM systematically, using ALL available feedback loops to ensure code works as intended and passes all checks.
 
 ### Available Feedback Loops
 Use these to verify your changes are working:
@@ -438,7 +438,8 @@ Use these to verify your changes are working:
 2. Make incremental changes, testing after each significant change
 3. If tests exist, run them early and often
 4. If no tests exist for your changes, consider adding them
-5. Verify the fix/feature works manually, not just that tests pass"
+5. Verify the fix/feature works manually, not just that tests pass
+6. Keep iterating until you meet the Definition of Done"
 
 # --- SECTION 3: DEFINITION OF DONE ---
 if [ "$COMMIT_MODE" = "pr" ]; then
@@ -449,7 +450,8 @@ You are ONLY done when ALL of the following are true:
 - [ ] Linter/type checks pass (if available)
 - [ ] You have manually verified the change works as intended
 - [ ] Code follows project standards (check AGENTS.md)
-- [ ] progress.txt is updated with what you did${PRE_COMMIT_EXTRA:+
+- [ ] progress.txt is updated with what you did
+- [ ] If there are deployments, wait for them to succeed and re-verify your changes work${PRE_COMMIT_EXTRA:+
 - [ ] $PRE_COMMIT_EXTRA}"
 else
     SECTION_DONE="## 3. Definition of Done
@@ -459,7 +461,8 @@ You are ONLY done when ALL of the following are true:
 - [ ] Linter/type checks pass (if available)  
 - [ ] You have manually verified the change works as intended
 - [ ] Code follows project standards (check AGENTS.md)
-- [ ] progress.txt is updated with what you did${PRE_COMMIT_EXTRA:+
+- [ ] progress.txt is updated with what you did
+- [ ] If there are deployments, wait for them to succeed and re-verify your changes work${PRE_COMMIT_EXTRA:+
 - [ ] $PRE_COMMIT_EXTRA}"
 fi
 
@@ -521,8 +524,8 @@ After opening the PR, you must get approval from GitHub Copilot code review.
 
 1. **Wait for Copilot review** - Copilot will automatically review your PR
 2. **Address ALL comments** - For each comment:
-   - Fix the issue in your code
-   - Reply directly to the comment explaining what you changed
+   - Use your judgement to assess whether to fix the issue or not
+   - Reply directly to the comment explaining the fix or reason for not fixing
    - Mark the comment as resolved
 3. **Request re-review** - After addressing all comments, request a new review:
    \`\`\`bash
@@ -583,7 +586,7 @@ $SECTION_REVIEW
 }
 $COMPLETION_MESSAGE
 
-**IMPORTANT**: Only work on ONE $TASK_ITEM. Do not proceed to the next one."
+**IMPORTANT**: Only work on ONE $TASK_ITEM."
 
 check_dependency "$AGENT"
 
