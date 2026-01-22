@@ -280,8 +280,13 @@ echo "Checking out $DEFAULT_BRANCH and pulling latest..."
 git checkout "$DEFAULT_BRANCH"
 git pull origin "$DEFAULT_BRANCH"
 
-touch progress.txt
-PROGRESS=$(cat progress.txt)
+# For PRD mode, use progress.txt; for GitHub mode, use recent commit history
+if [ "$MODE" = "prd" ]; then
+    touch progress.txt
+    PROGRESS=$(cat progress.txt)
+else
+    PROGRESS=$(git log --oneline -10 2>/dev/null || echo "No commits yet")
+fi
 
 # ============================================================
 # BUILD PROMPT SECTIONS
@@ -367,17 +372,13 @@ fetch_github_tasks() {
 
 Here are the open sub-issues for this epic:
 
-$ISSUES
-
-Issues marked as done in progress.txt should not be worked on again."
+$ISSUES"
         # Clear SPECIFIC_TASK so the agent picks from sub-issues
         SPECIFIC_TASK=""
     else
         TASK_CONTEXT="Here are the open GitHub issues for $REPO:
 
-$ISSUES
-
-Issues marked as done in progress.txt should not be worked on again."
+$ISSUES"
     fi
 
     # No extra pre-commit instructions for GitHub mode
@@ -407,13 +408,19 @@ if [ -n "$SPECIFIC_TASK" ]; then
 
 Work on $TASK_ITEM #$SPECIFIC_TASK specifically. Do NOT pick a different $TASK_ITEM."
     echo "Targeting specific $TASK_ITEM: #$SPECIFIC_TASK"
-else
+elif [ "$MODE" = "prd" ]; then
     SECTION_CHOOSE="## 1. Choose the Task
 
 Review the available ${TASK_ITEM}s and the progress file, then select ONE to work on:
 - Pick the next best $TASK_ITEM to work on, prioritising as you see fit
 - Fall back to the lowest-numbered $TASK_ITEM if priority isn't clear
 - Skip any already marked done in progress.txt"
+else
+    SECTION_CHOOSE="## 1. Choose the Task
+
+Review the available ${TASK_ITEM}s and the recent commit history, then select ONE to work on:
+- Pick the next best $TASK_ITEM to work on, prioritising as you see fit
+- Fall back to the lowest-numbered $TASK_ITEM if priority isn't clear"
 fi
 
 # --- SECTION 2: IMPLEMENT WITH FEEDBACK LOOPS ---
@@ -438,6 +445,13 @@ Use these to verify your changes are working:
 6. Keep iterating until you meet the Definition of Done"
 
 # --- SECTION 3: DEFINITION OF DONE ---
+# Progress tracking differs: PRD mode uses progress.txt, GitHub mode uses commit messages
+if [ "$MODE" = "prd" ]; then
+    PROGRESS_ITEM="- [ ] progress.txt is updated with what you did"
+else
+    PROGRESS_ITEM="- [ ] Your commit message clearly describes what was done and why"
+fi
+
 if [ "$COMMIT_MODE" = "pr" ]; then
     SECTION_DONE="## 3. Definition of Done
 
@@ -446,7 +460,7 @@ You are ONLY done when ALL of the following are true:
 - [ ] Linter/type checks pass (if available)
 - [ ] You have manually verified the change works as intended
 - [ ] Code follows project standards (check AGENTS.md)
-- [ ] progress.txt is updated with what you did
+$PROGRESS_ITEM
 - [ ] If there are deployments, wait for them to succeed and re-verify your changes work${PRE_COMMIT_EXTRA:+
 - [ ] $PRE_COMMIT_EXTRA}"
 else
@@ -457,39 +471,46 @@ You are ONLY done when ALL of the following are true:
 - [ ] Linter/type checks pass (if available)  
 - [ ] You have manually verified the change works as intended
 - [ ] Code follows project standards (check AGENTS.md)
-- [ ] progress.txt is updated with what you did
+$PROGRESS_ITEM
 - [ ] If there are deployments, wait for them to succeed and re-verify your changes work${PRE_COMMIT_EXTRA:+
 - [ ] $PRE_COMMIT_EXTRA}"
 fi
 
 # --- SECTION 4: DELIVER ---
+# Stage instruction differs: PRD mode includes progress.txt, GitHub mode doesn't
+if [ "$MODE" = "prd" ]; then
+    STAGE_INSTRUCTION="Stage ALL modified files (including progress.txt and any PRD files)"
+else
+    STAGE_INSTRUCTION="Stage all modified files"
+fi
+
 if [ "$COMMIT_MODE" = "pr" ]; then
     DELIVER_STEPS="1. Create a feature branch (e.g., feature/123-short-description)
-2. Stage ALL modified files (including progress.txt and any PRD files)
+2. $STAGE_INSTRUCTION
 3. Commit with a clear message following AGENTS.md guidance
 4. Push and open a pull request referencing the $TASK_ITEM
 5. Wait for CI/status checks to pass - if they fail, fix and push again"
 else
     case "$COMMIT_MODE" in
         main)
-            DELIVER_STEPS="1. Stage ALL modified files (including progress.txt and any PRD files)
+            DELIVER_STEPS="1. $STAGE_INSTRUCTION
 2. Commit to main with a clear message following AGENTS.md guidance
 3. Push to origin"
             ;;
         commit)
-            DELIVER_STEPS="1. Stage ALL modified files (including progress.txt and any PRD files)
+            DELIVER_STEPS="1. $STAGE_INSTRUCTION
 2. Commit to main with a clear message following AGENTS.md guidance
 3. Do NOT push - leave the commit local for review"
             ;;
         branch)
             if [ "$MODE" = "prd" ] && [ -n "$PRD_BRANCH" ]; then
                 DELIVER_STEPS="1. Create or switch to branch '$PRD_BRANCH'
-2. Stage ALL modified files (including progress.txt and any PRD files)
+2. $STAGE_INSTRUCTION
 3. Commit with a clear message following AGENTS.md guidance
 4. Do NOT push - leave the branch local for review"
             else
                 DELIVER_STEPS="1. Create a branch (e.g., feature/123-$TASK_ITEM-title)
-2. Stage ALL modified files (including progress.txt and any PRD files)
+2. $STAGE_INSTRUCTION
 3. Commit with a clear message following AGENTS.md guidance
 4. Do NOT push - leave the branch local for review"
             fi
@@ -544,13 +565,19 @@ fi
 # ============================================================
 # ASSEMBLE FINAL PROMPT
 # ============================================================
+if [ "$MODE" = "prd" ]; then
+    PROGRESS_HEADER="## Progress So Far"
+else
+    PROGRESS_HEADER="## Recent Commits"
+fi
+
 PROMPT="# Task Assignment
 
 $TASK_CONTEXT
 
 ---
 
-## Progress So Far
+$PROGRESS_HEADER
 
 \`\`\`
 $PROGRESS
