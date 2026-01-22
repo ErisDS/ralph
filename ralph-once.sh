@@ -301,20 +301,68 @@ ONLY DO ONE TASK AT A TIME."
 fetch_github_tasks() {
     echo "Working on repo: $REPO"
     
-    ISSUES=$(gh issue list --repo "$REPO" --state open --limit 20 --json number,title,body,labels) || {
-        echo "Error: Failed to fetch issues from $REPO"; exit 1
-    }
+    # Check if a specific issue was requested and if it's an epic (has sub-issues)
+    if [ -n "$SPECIFIC_TASK" ]; then
+        PARENT_ISSUE=$(gh issue view "$SPECIFIC_TASK" --repo "$REPO" --json number,title,body,labels 2>/dev/null) || {
+            echo "Error: Failed to fetch issue #$SPECIFIC_TASK from $REPO"; exit 1
+        }
+        
+        # Check if this issue has sub-issues (tasklist items like "- [ ] #123" or "- [ ] https://github.com/.../issues/123")
+        PARENT_BODY=$(echo "$PARENT_ISSUE" | jq -r '.body // ""')
+        SUB_ISSUE_NUMBERS=$(echo "$PARENT_BODY" | grep -oE '\- \[ \] (#[0-9]+|https://github\.com/[^/]+/[^/]+/issues/[0-9]+)' | grep -oE '[0-9]+$' | head -20)
+        
+        if [ -n "$SUB_ISSUE_NUMBERS" ]; then
+            # This is an epic - fetch the sub-issues
+            echo "Issue #$SPECIFIC_TASK is an epic, fetching sub-issues..."
+            ISSUES="["
+            FIRST=true
+            for NUM in $SUB_ISSUE_NUMBERS; do
+                SUB_ISSUE=$(gh issue view "$NUM" --repo "$REPO" --json number,title,body,labels,state 2>/dev/null)
+                if [ -n "$SUB_ISSUE" ]; then
+                    # Only include open issues
+                    STATE=$(echo "$SUB_ISSUE" | jq -r '.state')
+                    if [ "$STATE" = "OPEN" ]; then
+                        [ "$FIRST" = true ] && FIRST=false || ISSUES="$ISSUES,"
+                        ISSUES="$ISSUES$SUB_ISSUE"
+                    fi
+                fi
+            done
+            ISSUES="$ISSUES]"
+            
+            PARENT_TITLE=$(echo "$PARENT_ISSUE" | jq -r '.title')
+            IS_EPIC=true
+        fi
+    fi
     
-    # Filter out Renovate's Dependency Dashboard issue
-    ISSUES=$(echo "$ISSUES" | jq '[.[] | select(.title | contains("Dependency Dashboard") | not)]')
+    # If not an epic or no specific task, fetch regular issues
+    if [ -z "$IS_EPIC" ]; then
+        ISSUES=$(gh issue list --repo "$REPO" --state open --limit 20 --json number,title,body,labels) || {
+            echo "Error: Failed to fetch issues from $REPO"; exit 1
+        }
+        
+        # Filter out Renovate's Dependency Dashboard issue
+        ISSUES=$(echo "$ISSUES" | jq '[.[] | select(.title | contains("Dependency Dashboard") | not)]')
+    fi
     
     [ -z "$ISSUES" ] || [ "$ISSUES" = "[]" ] && { echo "No open issues found in $REPO"; exit 0; }
     
-    TASK_CONTEXT="Here are the open GitHub issues for $REPO:
+    if [ "$IS_EPIC" = true ]; then
+        TASK_CONTEXT="You are working on epic #$SPECIFIC_TASK: $PARENT_TITLE
+
+Here are the open sub-issues for this epic:
 
 $ISSUES
 
 Issues marked as done in progress.txt should not be worked on again."
+        # Clear SPECIFIC_TASK so the agent picks from sub-issues
+        SPECIFIC_TASK=""
+    else
+        TASK_CONTEXT="Here are the open GitHub issues for $REPO:
+
+$ISSUES
+
+Issues marked as done in progress.txt should not be worked on again."
+    fi
 
     # No extra pre-commit instructions for GitHub mode
     PRE_COMMIT_EXTRA=""
