@@ -1,0 +1,53 @@
+# Ralph Base Image
+# Common tools for AI coding agents - projects extend this with their specifics
+#
+# Build: docker build -t ralph-base -f docker/Dockerfile.base .
+# Projects extend: FROM ralph-base
+
+FROM node:22-bookworm
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    jq \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install common package managers
+RUN corepack enable \
+    && corepack prepare pnpm@latest --activate \
+    && corepack prepare yarn@stable --activate
+
+# Install opencode CLI globally
+RUN npm install -g opencode-ai
+
+# Create non-root user (opencode refuses to run as root with dangerous permissions)
+RUN useradd -m -s /bin/bash ralph
+
+# Configure git defaults for ralph user
+USER ralph
+RUN git config --global user.name "Ralph Bot" \
+    && git config --global user.email "ralph@example.com" \
+    && git config --global init.defaultBranch main
+
+# Back to root for project-specific setup (projects will switch to ralph at the end)
+USER root
+
+# Copy the generic entrypoint
+COPY entrypoint.sh /usr/local/bin/ralph-entrypoint.sh
+RUN chmod +x /usr/local/bin/ralph-entrypoint.sh
+
+# Default workspace (projects override this)
+WORKDIR /workspace
+
+# Labels
+LABEL org.opencontainers.image.title="Ralph Base"
+LABEL org.opencontainers.image.description="Base image for Ralph parallel AI coding agents"

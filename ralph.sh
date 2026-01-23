@@ -1,0 +1,672 @@
+#!/bin/bash
+set -e
+
+# ============================================================
+# Ralph - Parallel AI Agent CLI
+# Manages Docker containers for AI coding agents across any project
+# ============================================================
+
+VERSION="2.0.0"
+BASE_IMAGE_NAME="ralph-base"
+CONTAINER_PREFIX="ralph"
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# ============================================================
+# Helper Functions
+# ============================================================
+
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
+
+log_success() {
+    echo -e "${GREEN}[OK]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
+
+# Find ralph config directory (look for ralph/ralph.json)
+find_ralph_config() {
+    local dir="$PWD"
+    while [ "$dir" != "/" ]; do
+        if [ -f "$dir/ralph/ralph.json" ]; then
+            echo "$dir/ralph"
+            return 0
+        fi
+        dir="$(dirname "$dir")"
+    done
+    return 1
+}
+
+# Get project name from config
+get_project_name() {
+    local config_dir="$1"
+    jq -r '.repo.name // "project"' "$config_dir/ralph.json" | tr '[:upper:]' '[:lower:]'
+}
+
+# Get image name for project
+get_image_name() {
+    local project_name="$1"
+    echo "ralph-${project_name}"
+}
+
+# Normalize task ID to container-safe format
+normalize_task_id() {
+    echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g'
+}
+
+# Get container name
+container_name() {
+    local project_name="$1"
+    local task_id="$2"
+    echo "${CONTAINER_PREFIX}-${project_name}-$(normalize_task_id "$task_id")"
+}
+
+# Check if image exists
+image_exists() {
+    docker image inspect "$1" &>/dev/null
+}
+
+# Check if container exists
+container_exists() {
+    docker container inspect "$1" &>/dev/null 2>&1
+}
+
+# Check if container is running
+container_running() {
+    [ "$(docker container inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = "true" ]
+}
+
+# ============================================================
+# Commands
+# ============================================================
+
+show_usage() {
+    cat << EOF
+Ralph - Parallel AI Agent CLI
+Version: $VERSION
+
+Usage: ralph.sh <command> [options]
+
+Commands:
+  build-base           Build the ralph-base Docker image
+  build                Build project-specific image (run from project dir)
+  start                Start a new agent container
+  list                 List all Ralph containers
+  logs                 View container logs
+  stop                 Stop container(s)
+  status               Show detailed status of a container
+  shell                Open interactive shell in container
+  clean                Remove all stopped containers
+  init                 Initialize ralph config in current project
+
+Start Options:
+  --issue <number>     Work on a GitHub issue
+  --prd <story-id>     Work on a PRD user story
+  --prompt <text>      Work on a custom prompt
+
+Examples:
+  ralph.sh build-base                    # Build base image (one time)
+  ralph.sh init                          # Set up ralph in current project
+  ralph.sh build                         # Build project image
+  ralph.sh start --issue 42              # Start agent on issue
+  ralph.sh list                          # List all containers
+  ralph.sh logs -f issue-42              # Follow logs
+  ralph.sh stop --all                    # Stop all containers
+
+Environment Variables:
+  GITHUB_TOKEN         Required for GitHub operations
+  ANTHROPIC_API_KEY    Required for opencode with Anthropic
+  RALPH_CPUS           CPU limit per container (default: 2)
+  RALPH_MEMORY         Memory limit per container (default: 4g)
+
+EOF
+}
+
+cmd_build_base() {
+    log_info "Building ralph-base image..."
+    
+    docker build -t "$BASE_IMAGE_NAME" -f "$SCRIPT_DIR/docker/Dockerfile.base" "$SCRIPT_DIR/docker"
+    
+    log_success "Base image built: $BASE_IMAGE_NAME"
+}
+
+cmd_init() {
+    local target_dir="${1:-.}"
+    
+    if [ -d "$target_dir/ralph" ]; then
+        log_error "ralph/ directory already exists"
+        exit 1
+    fi
+    
+    log_info "Initializing ralph in $target_dir..."
+    
+    mkdir -p "$target_dir/ralph"
+    
+    # Copy templates
+    cp "$SCRIPT_DIR/templates/ralph.json" "$target_dir/ralph/"
+    cp "$SCRIPT_DIR/templates/Dockerfile" "$target_dir/ralph/"
+    cp "$SCRIPT_DIR/templates/prompt.md" "$target_dir/ralph/"
+    
+    log_success "Created ralph/ directory with templates"
+    echo ""
+    echo "Next steps:"
+    echo "  1. Edit ralph/ralph.json with your project details"
+    echo "  2. Edit ralph/Dockerfile if needed"
+    echo "  3. Run: ralph.sh build"
+    echo "  4. Run: ralph.sh start --issue <number>"
+}
+
+cmd_build() {
+    local config_dir
+    if ! config_dir=$(find_ralph_config); then
+        log_error "No ralph/ralph.json found. Run 'ralph.sh init' first."
+        exit 1
+    fi
+    
+    local project_name=$(get_project_name "$config_dir")
+    local image_name=$(get_image_name "$project_name")
+    
+    log_info "Building image for project: $project_name"
+    
+    # Check base image exists
+    if ! image_exists "$BASE_IMAGE_NAME"; then
+        log_warn "Base image not found. Building it first..."
+        cmd_build_base
+    fi
+    
+    # Check for GITHUB_TOKEN (needed for private repo clone)
+    if [ -z "$GITHUB_TOKEN" ]; then
+        log_warn "No GITHUB_TOKEN set. Build may fail for private repos."
+    fi
+    
+    local build_args=""
+    if [ -n "$GITHUB_TOKEN" ]; then
+        build_args="--build-arg GITHUB_TOKEN=$GITHUB_TOKEN"
+    fi
+    
+    # Build from the project's ralph directory
+    docker build $build_args -t "$image_name" "$config_dir"
+    
+    log_success "Image built: $image_name"
+}
+
+cmd_start() {
+    local config_dir
+    if ! config_dir=$(find_ralph_config); then
+        log_error "No ralph/ralph.json found. Run 'ralph.sh init' first."
+        exit 1
+    fi
+    
+    local project_name=$(get_project_name "$config_dir")
+    local image_name=$(get_image_name "$project_name")
+    
+    local task_type=""
+    local task_value=""
+    local task_id=""
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --issue)
+                task_type="issue"
+                task_value="$2"
+                task_id="issue-$2"
+                shift 2
+                ;;
+            --prd)
+                task_type="prd"
+                task_value="$2"
+                task_id="$2"
+                shift 2
+                ;;
+            --prompt)
+                task_type="prompt"
+                task_value="$2"
+                task_id="custom-$(date +%s)"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_usage
+                exit 1
+                ;;
+        esac
+    done
+    
+    if [ -z "$task_type" ]; then
+        log_error "Must specify --issue, --prd, or --prompt"
+        show_usage
+        exit 1
+    fi
+    
+    # Check prerequisites
+    if ! image_exists "$image_name"; then
+        log_error "Image not found: $image_name. Run 'ralph.sh build' first."
+        exit 1
+    fi
+    
+    if [ -z "$GITHUB_TOKEN" ]; then
+        log_error "GITHUB_TOKEN environment variable is required"
+        exit 1
+    fi
+    
+    local cname=$(container_name "$project_name" "$task_id")
+    
+    # Check if container already exists
+    if container_exists "$cname"; then
+        if container_running "$cname"; then
+            log_error "Container $cname is already running"
+            exit 1
+        else
+            log_warn "Removing stopped container $cname"
+            docker rm "$cname"
+        fi
+    fi
+    
+    # Resource limits
+    local cpus="${RALPH_CPUS:-2}"
+    local memory="${RALPH_MEMORY:-4g}"
+    
+    # Build docker run command
+    local docker_args=(
+        run
+        --detach
+        --name "$cname"
+        --cpus="$cpus"
+        --memory="$memory"
+        -e "GITHUB_TOKEN=$GITHUB_TOKEN"
+    )
+    
+    # Add ANTHROPIC_API_KEY if set
+    if [ -n "$ANTHROPIC_API_KEY" ]; then
+        docker_args+=(-e "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
+    fi
+    
+    # Add image and entrypoint args
+    docker_args+=("$image_name")
+    docker_args+=("--$task_type" "$task_value")
+    
+    log_info "Starting container: $cname"
+    log_info "Project: $project_name"
+    log_info "Task: $task_type = $task_value"
+    log_info "Resources: $cpus CPUs, $memory memory"
+    
+    docker "${docker_args[@]}"
+    
+    log_success "Container started: $cname"
+    echo ""
+    echo "View logs:     ralph.sh logs $task_id"
+    echo "Follow logs:   ralph.sh logs -f $task_id"
+    echo "Stop:          ralph.sh stop $task_id"
+}
+
+cmd_list() {
+    echo ""
+    printf "%-40s %-12s %-15s %s\n" "CONTAINER" "STATUS" "UPTIME" "TASK"
+    printf "%-40s %-12s %-15s %s\n" "────────────────────────────────────────" "────────────" "───────────────" "────────────────────"
+    
+    docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}' | while IFS=$'\t' read -r name status; do
+        # Extract task from container name (last part after project name)
+        task="${name##*-}"
+        
+        # Parse status
+        if [[ "$status" == *"Up"* ]]; then
+            state="${GREEN}running${NC}"
+            uptime=$(echo "$status" | sed 's/Up //')
+        elif [[ "$status" == *"Exited (0)"* ]]; then
+            state="${BLUE}completed${NC}"
+            uptime="-"
+        else
+            state="${RED}failed${NC}"
+            uptime="-"
+        fi
+        
+        printf "%-40s ${state}%-12s %-15s %s\n" "$name" "" "$uptime" "$task"
+    done
+    
+    echo ""
+}
+
+cmd_logs() {
+    local config_dir
+    config_dir=$(find_ralph_config) || true
+    
+    local project_name=""
+    if [ -n "$config_dir" ]; then
+        project_name=$(get_project_name "$config_dir")
+    fi
+    
+    local follow=false
+    local task_id=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -f|--follow)
+                follow=true
+                shift
+                ;;
+            *)
+                task_id="$1"
+                shift
+                ;;
+        esac
+    done
+    
+    if [ -z "$task_id" ]; then
+        log_error "Must specify a task ID"
+        echo "Usage: ralph.sh logs [-f] <task-id>"
+        exit 1
+    fi
+    
+    # Try to find the container
+    local cname=""
+    
+    # If we have project context, try project-specific names first
+    if [ -n "$project_name" ]; then
+        for pattern in "$task_id" "issue-$task_id"; do
+            local try_name="${CONTAINER_PREFIX}-${project_name}-${pattern}"
+            if container_exists "$try_name"; then
+                cname="$try_name"
+                break
+            fi
+        done
+    fi
+    
+    # Fall back to searching all containers
+    if [ -z "$cname" ]; then
+        cname=$(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}' | grep -E "(^|-)${task_id}$" | head -1)
+    fi
+    
+    if [ -z "$cname" ]; then
+        log_error "Container not found for task: $task_id"
+        log_info "Available containers:"
+        docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '  {{.Names}}'
+        exit 1
+    fi
+    
+    if [ "$follow" = true ]; then
+        docker logs -f "$cname"
+    else
+        docker logs "$cname"
+    fi
+}
+
+cmd_stop() {
+    local config_dir
+    config_dir=$(find_ralph_config) || true
+    
+    local project_name=""
+    if [ -n "$config_dir" ]; then
+        project_name=$(get_project_name "$config_dir")
+    fi
+    
+    local stop_all=false
+    local task_id=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --all|-a)
+                stop_all=true
+                shift
+                ;;
+            *)
+                task_id="$1"
+                shift
+                ;;
+        esac
+    done
+    
+    if [ "$stop_all" = true ]; then
+        local filter="name=${CONTAINER_PREFIX}-"
+        if [ -n "$project_name" ]; then
+            filter="name=${CONTAINER_PREFIX}-${project_name}-"
+            log_info "Stopping all Ralph containers for project: $project_name"
+        else
+            log_info "Stopping all Ralph containers..."
+        fi
+        
+        local containers=$(docker ps -q --filter "$filter")
+        if [ -n "$containers" ]; then
+            docker stop $containers
+            docker rm $containers
+            log_success "Containers stopped and removed"
+        else
+            log_info "No running containers found"
+        fi
+        return
+    fi
+    
+    if [ -z "$task_id" ]; then
+        log_error "Must specify a task ID or --all"
+        echo "Usage: ralph.sh stop <task-id> | --all"
+        exit 1
+    fi
+    
+    # Find container (similar logic to logs)
+    local cname=""
+    if [ -n "$project_name" ]; then
+        for pattern in "$task_id" "issue-$task_id"; do
+            local try_name="${CONTAINER_PREFIX}-${project_name}-${pattern}"
+            if container_exists "$try_name"; then
+                cname="$try_name"
+                break
+            fi
+        done
+    fi
+    
+    if [ -z "$cname" ]; then
+        cname=$(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}' | grep -E "(^|-)${task_id}$" | head -1)
+    fi
+    
+    if [ -z "$cname" ]; then
+        log_error "Container not found for task: $task_id"
+        exit 1
+    fi
+    
+    log_info "Stopping container: $cname"
+    docker stop "$cname" 2>/dev/null || true
+    docker rm "$cname"
+    log_success "Container stopped and removed: $cname"
+}
+
+cmd_status() {
+    local config_dir
+    config_dir=$(find_ralph_config) || true
+    
+    local project_name=""
+    if [ -n "$config_dir" ]; then
+        project_name=$(get_project_name "$config_dir")
+    fi
+    
+    local task_id="$1"
+    
+    if [ -z "$task_id" ]; then
+        log_error "Must specify a task ID"
+        echo "Usage: ralph.sh status <task-id>"
+        exit 1
+    fi
+    
+    # Find container
+    local cname=""
+    if [ -n "$project_name" ]; then
+        for pattern in "$task_id" "issue-$task_id"; do
+            local try_name="${CONTAINER_PREFIX}-${project_name}-${pattern}"
+            if container_exists "$try_name"; then
+                cname="$try_name"
+                break
+            fi
+        done
+    fi
+    
+    if [ -z "$cname" ]; then
+        cname=$(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}' | grep -E "(^|-)${task_id}$" | head -1)
+    fi
+    
+    if [ -z "$cname" ]; then
+        log_error "Container not found for task: $task_id"
+        exit 1
+    fi
+    
+    echo ""
+    echo "Container: $cname"
+    echo "─────────────────────────────────────────"
+    
+    docker inspect "$cname" --format '
+Status:    {{.State.Status}}
+Started:   {{.State.StartedAt}}
+Finished:  {{if eq .State.FinishedAt "0001-01-01T00:00:00Z"}}-{{else}}{{.State.FinishedAt}}{{end}}
+Exit Code: {{.State.ExitCode}}
+'
+    
+    if container_running "$cname"; then
+        echo ""
+        echo "Git Status:"
+        docker exec "$cname" git -C /workspace status --short 2>/dev/null || echo "  (unable to get git status)"
+        
+        echo ""
+        echo "Current Branch:"
+        docker exec "$cname" git -C /workspace branch --show-current 2>/dev/null || echo "  (unable to get branch)"
+        
+        echo ""
+        echo "Recent Commits:"
+        docker exec "$cname" git -C /workspace log --oneline -3 2>/dev/null || echo "  (no commits yet)"
+    fi
+    
+    echo ""
+}
+
+cmd_shell() {
+    local config_dir
+    config_dir=$(find_ralph_config) || true
+    
+    local project_name=""
+    if [ -n "$config_dir" ]; then
+        project_name=$(get_project_name "$config_dir")
+    fi
+    
+    local task_id="$1"
+    
+    if [ -z "$task_id" ]; then
+        log_error "Must specify a task ID"
+        echo "Usage: ralph.sh shell <task-id>"
+        exit 1
+    fi
+    
+    # Find container
+    local cname=""
+    if [ -n "$project_name" ]; then
+        for pattern in "$task_id" "issue-$task_id"; do
+            local try_name="${CONTAINER_PREFIX}-${project_name}-${pattern}"
+            if container_exists "$try_name"; then
+                cname="$try_name"
+                break
+            fi
+        done
+    fi
+    
+    if [ -z "$cname" ]; then
+        cname=$(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}' | grep -E "(^|-)${task_id}$" | head -1)
+    fi
+    
+    if [ -z "$cname" ]; then
+        log_error "Container not found for task: $task_id"
+        exit 1
+    fi
+    
+    if ! container_running "$cname"; then
+        log_error "Container is not running: $cname"
+        exit 1
+    fi
+    
+    log_info "Opening shell in: $cname"
+    docker exec -it "$cname" /bin/bash
+}
+
+cmd_clean() {
+    log_info "Cleaning up stopped Ralph containers..."
+    
+    local stopped=$(docker ps -aq --filter "name=${CONTAINER_PREFIX}-" --filter "status=exited")
+    if [ -n "$stopped" ]; then
+        docker rm $stopped
+        log_success "Removed stopped containers"
+    else
+        log_info "No stopped containers to remove"
+    fi
+    
+    log_info "Removing dangling images..."
+    docker image prune -f
+    
+    log_success "Cleanup complete"
+}
+
+# ============================================================
+# Main
+# ============================================================
+
+if [ $# -eq 0 ]; then
+    show_usage
+    exit 0
+fi
+
+COMMAND="$1"
+shift
+
+case "$COMMAND" in
+    build-base)
+        cmd_build_base "$@"
+        ;;
+    init)
+        cmd_init "$@"
+        ;;
+    build)
+        cmd_build "$@"
+        ;;
+    start)
+        cmd_start "$@"
+        ;;
+    list|ls)
+        cmd_list "$@"
+        ;;
+    logs)
+        cmd_logs "$@"
+        ;;
+    stop)
+        cmd_stop "$@"
+        ;;
+    status)
+        cmd_status "$@"
+        ;;
+    shell|sh)
+        cmd_shell "$@"
+        ;;
+    clean)
+        cmd_clean "$@"
+        ;;
+    -h|--help|help)
+        show_usage
+        ;;
+    -v|--version)
+        echo "ralph $VERSION"
+        ;;
+    *)
+        log_error "Unknown command: $COMMAND"
+        show_usage
+        exit 1
+        ;;
+esac
