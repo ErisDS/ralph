@@ -10,8 +10,8 @@ VERSION="2.0.0"
 BASE_IMAGE_NAME="ralph-base"
 CONTAINER_PREFIX="ralph"
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Get the directory where this script is located (resolving symlinks)
+SCRIPT_DIR="$(cd "$(dirname "$(realpath "${BASH_SOURCE[0]}")")" && pwd)"
 
 # Colors for output
 RED='\033[0;31m'
