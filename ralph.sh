@@ -107,6 +107,7 @@ Commands:
   build-base           Build the ralph-base Docker image
   build                Build project-specific image (run from project dir)
   start                Start a new agent container
+  attach               Connect to agent for follow-up instructions
   list                 List all Ralph containers
   logs                 View container logs
   stop                 Stop container(s)
@@ -125,6 +126,7 @@ Examples:
   ralph.sh init                          # Set up ralph in current project
   ralph.sh build                         # Build project image
   ralph.sh start --issue 42              # Start agent on issue
+  ralph.sh attach issue-42               # Connect for follow-up work
   ralph.sh list                          # List all containers
   ralph.sh logs -f issue-42              # Follow logs
   ralph.sh stop --all                    # Stop all containers
@@ -598,6 +600,59 @@ cmd_shell() {
     docker exec -it "$cname" /bin/bash
 }
 
+cmd_attach() {
+    local config_dir
+    config_dir=$(find_ralph_config) || true
+    
+    local project_name=""
+    if [ -n "$config_dir" ]; then
+        project_name=$(get_project_name "$config_dir")
+    fi
+    
+    local task_id="$1"
+    
+    if [ -z "$task_id" ]; then
+        log_error "Must specify a task ID"
+        echo "Usage: ralph.sh attach <task-id>"
+        exit 1
+    fi
+    
+    # Find container
+    local cname=""
+    if [ -n "$project_name" ]; then
+        for pattern in "$task_id" "issue-$task_id"; do
+            local try_name="${CONTAINER_PREFIX}-${project_name}-${pattern}"
+            if container_exists "$try_name"; then
+                cname="$try_name"
+                break
+            fi
+        done
+    fi
+    
+    if [ -z "$cname" ]; then
+        cname=$(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}' | grep -E "(^|-)${task_id}$" | head -1)
+    fi
+    
+    if [ -z "$cname" ]; then
+        log_error "Container not found for task: $task_id"
+        exit 1
+    fi
+    
+    if ! container_running "$cname"; then
+        log_error "Container is not running: $cname"
+        log_info "The agent may have completed or failed. Check logs with:"
+        echo "  ralph.sh logs $task_id"
+        exit 1
+    fi
+    
+    log_info "Attaching to agent in: $cname"
+    log_info "Resuming opencode session..."
+    echo ""
+    
+    # Run opencode --continue to resume the session interactively
+    docker exec -it -w /workspace "$cname" opencode --continue
+}
+
 cmd_clean() {
     log_info "Cleaning up stopped Ralph containers..."
     
@@ -654,6 +709,9 @@ case "$COMMAND" in
         ;;
     shell|sh)
         cmd_shell "$@"
+        ;;
+    attach)
+        cmd_attach "$@"
         ;;
     clean)
         cmd_clean "$@"

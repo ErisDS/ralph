@@ -393,4 +393,22 @@ if [ -n "$PR_NUMBER" ]; then
         -f 'reviewers[]=copilot-pull-request-reviewer[bot]' 2>/dev/null || true
 fi
 
-exit 0
+# ============================================================
+# Keep Container Alive for Interactive Follow-up
+# ============================================================
+echo ""
+echo "=============================================="
+echo "Container staying alive for follow-up work"
+echo "=============================================="
+echo ""
+echo "To continue working with this agent:"
+echo "  ralph attach $TASK_ID"
+echo ""
+echo "To stop this container:"
+echo "  ralph stop $TASK_ID"
+echo ""
+echo "Waiting for attach or stop signal..."
+
+# Keep container running - wait indefinitely
+# User can attach with 'ralph attach' or stop with 'ralph stop'
+exec tail -f /dev/null
