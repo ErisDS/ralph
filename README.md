@@ -35,7 +35,7 @@ ralph.sh list                    # See all running agents
 - `--issue` can target epics with tasklists; Ralph will choose the best open sub-issue.
 - "Dependency Dashboard" issues are ignored automatically.
 - `--copilot` (or `agentReview: "copilot"`) adds a required Copilot review loop before completion.
-- Add project-specific commands, manual testing steps, or deploy checks in `ralph/prompt.md`.
+- Add project-specific commands, manual testing steps, or deploy checks in `ralph/prompt.md` or `.ralph/prompt-once.md` (single-agent).
 
 ---
 
@@ -122,6 +122,8 @@ Run `ralph.sh init` to create this from templates.
 
 ### Configuration (`.ralph/config.json`)
 
+Single-agent prompt template can be overridden per project by creating `.ralph/prompt-once.md`.
+
 ```json
 {
   "mode": "github",
@@ -160,7 +162,7 @@ Notes:
 - `commitMode`: `pr`, `main`, `commit`, `branch`, or `none`
 - `agent.review`: set to `copilot` to require Copilot review in PR mode
 
-Optional: add project-specific instructions in `ralph/prompt.md`. These are appended to Ralph's built-in prompt.
+Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.ralph/prompt-once.md` (single-agent).
 
 ### Commands
 

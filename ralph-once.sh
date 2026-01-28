@@ -4,6 +4,7 @@ set -e
 VERSION="1.0.0"
 CONFIG_DIR=".ralph"
 CONFIG_FILE="$CONFIG_DIR/config.json"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -571,43 +572,33 @@ else
     PROGRESS_HEADER="## Recent Commits"
 fi
 
-PROMPT="# Task Assignment
+if [ -n "$SECTION_REVIEW" ]; then
+    SECTION_REVIEW_BLOCK="$SECTION_REVIEW
 
-$TASK_CONTEXT
+---"
+else
+    SECTION_REVIEW_BLOCK=""
+fi
 
----
+IMPORTANT_MESSAGE="**IMPORTANT**: Only work on ONE $TASK_ITEM."
 
-$PROGRESS_HEADER
+TEMPLATE_PATH="$SCRIPT_DIR/templates/prompt-once.md"
+if [ -f ".ralph/prompt-once.md" ]; then
+    TEMPLATE_PATH=".ralph/prompt-once.md"
+fi
 
-\`\`\`
-$PROGRESS
-\`\`\`
-
----
-
-$SECTION_CHOOSE
-
----
-
-$SECTION_IMPLEMENT
-
----
-
-$SECTION_DONE
-
----
-
-$SECTION_DELIVER
-
----
-${SECTION_REVIEW:+
-$SECTION_REVIEW
-
----
-}
-$COMPLETION_MESSAGE
-
-**IMPORTANT**: Only work on ONE $TASK_ITEM."
+PROMPT_TEMPLATE=$(cat "$TEMPLATE_PATH")
+PROMPT="$PROMPT_TEMPLATE"
+PROMPT="${PROMPT//\{\{TASK_CONTEXT\}\}/$TASK_CONTEXT}"
+PROMPT="${PROMPT//\{\{PROGRESS_HEADER\}\}/$PROGRESS_HEADER}"
+PROMPT="${PROMPT//\{\{PROGRESS\}\}/$PROGRESS}"
+PROMPT="${PROMPT//\{\{SECTION_CHOOSE\}\}/$SECTION_CHOOSE}"
+PROMPT="${PROMPT//\{\{SECTION_IMPLEMENT\}\}/$SECTION_IMPLEMENT}"
+PROMPT="${PROMPT//\{\{SECTION_DONE\}\}/$SECTION_DONE}"
+PROMPT="${PROMPT//\{\{SECTION_DELIVER\}\}/$SECTION_DELIVER}"
+PROMPT="${PROMPT//\{\{SECTION_REVIEW_BLOCK\}\}/$SECTION_REVIEW_BLOCK}"
+PROMPT="${PROMPT//\{\{COMPLETION_MESSAGE\}\}/$COMPLETION_MESSAGE}"
+PROMPT="${PROMPT//\{\{IMPORTANT_MESSAGE\}\}/$IMPORTANT_MESSAGE}"
 
 check_dependency "$AGENT"
 
