@@ -120,6 +120,12 @@ your-project/
 
 Run `ralph.sh init` to create this from templates.
 
+### Claude CLI (Docker)
+
+- Base image includes the `claude` CLI.
+- `ralph.sh` mounts host Claude settings when present (`~/.claude`, `~/.config/claude`, `~/.config/anthropic`).
+- Set `"agent": "claude"` in `.ralph/config.json` to use it.
+
 ### Configuration (`.ralph/config.json`)
 
 Single-agent prompt template can be overridden per project by creating `.ralph/prompt-once.md`. The template contains the full implementation guidance and Definition of Done - see `templates/prompt-once.md` for the default and available placeholders.

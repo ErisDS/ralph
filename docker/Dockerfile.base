@@ -26,8 +26,8 @@ RUN corepack enable \
     && corepack prepare pnpm@latest --activate \
     && corepack prepare yarn@stable --activate
 
-# Install opencode CLI globally
-RUN npm install -g opencode-ai
+# Install opencode + claude CLIs globally
+RUN npm install -g opencode-ai @anthropic-ai/claude-code
 
 # Create non-root user (opencode refuses to run as root with dangerous permissions)
 RUN useradd -m -s /bin/bash ralph

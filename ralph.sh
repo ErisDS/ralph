@@ -377,6 +377,26 @@ cmd_start() {
     if [ -f "$opencode_auth_file" ]; then
         docker_args+=(-v "$opencode_auth_file:/home/ralph/.local/share/opencode/auth.json:ro")
     fi
+
+    local opencode_config_dir="$HOME/.config/opencode"
+    if [ -d "$opencode_config_dir" ]; then
+        docker_args+=(-v "$opencode_config_dir:/home/ralph/.config/opencode:ro")
+    fi
+
+    local claude_config_dir="$HOME/.config/claude"
+    if [ -d "$claude_config_dir" ]; then
+        docker_args+=(-v "$claude_config_dir:/home/ralph/.config/claude:ro")
+    fi
+
+    local claude_anthropic_dir="$HOME/.config/anthropic"
+    if [ -d "$claude_anthropic_dir" ]; then
+        docker_args+=(-v "$claude_anthropic_dir:/home/ralph/.config/anthropic:ro")
+    fi
+
+    local claude_home_dir="$HOME/.claude"
+    if [ -d "$claude_home_dir" ]; then
+        docker_args+=(-v "$claude_home_dir:/home/ralph/.claude:ro")
+    fi
     
     # Add image and entrypoint args
     docker_args+=("$image_name")
