@@ -122,7 +122,7 @@ Run `ralph.sh init` to create this from templates.
 
 ### Configuration (`.ralph/config.json`)
 
-Single-agent prompt template can be overridden per project by creating `.ralph/prompt-once.md`.
+Single-agent prompt template can be overridden per project by creating `.ralph/prompt-once.md`. The template contains the full implementation guidance and Definition of Done - see `templates/prompt-once.md` for the default and available placeholders.
 
 ```json
 {

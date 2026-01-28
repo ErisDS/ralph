@@ -1,10 +1,11 @@
 #!/bin/bash
 set -e
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 CONFIG_DIR=".ralph"
 CONFIG_FILE="$CONFIG_DIR/config.json"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+GLOBAL_CONFIG_DIR="$HOME/.config/ralph"
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -47,6 +48,25 @@ save_config() {
 
 detect_github_repo() {
     git remote get-url origin 2>/dev/null | sed -E 's|.*github\.com[:/]||; s|\.git$||' || echo ""
+}
+
+# Ensure global template exists and is up to date
+ensure_global_template() {
+    local global_template="$GLOBAL_CONFIG_DIR/templates/prompt-once.md"
+    local source_template="$SCRIPT_DIR/templates/prompt-once.md"
+    local version_file="$GLOBAL_CONFIG_DIR/templates/.version"
+    
+    # If source template doesn't exist (script copied without templates dir), skip
+    [ -f "$source_template" ] || return 0
+    
+    # Create global templates dir if needed
+    mkdir -p "$GLOBAL_CONFIG_DIR/templates"
+    
+    # Copy if global doesn't exist or version changed
+    if [ ! -f "$global_template" ] || [ ! -f "$version_file" ] || [ "$(cat "$version_file" 2>/dev/null)" != "$VERSION" ]; then
+        cp "$source_template" "$global_template"
+        echo "$VERSION" > "$version_file"
+    fi
 }
 
 # Normalize repo to owner/repo format, handling URLs, .git suffix, etc.
@@ -311,13 +331,10 @@ $PRD_CONTENT
 
 Tasks with \"passes\": false are incomplete. A task can only be worked on if all its dependencies (dependsOn) are complete."
 
-    # Used to build pre-commit instructions - includes PRD-specific updates
-    PRE_COMMIT_EXTRA="Also update the PRD file ($PRD_FILE): set \"passes\": true and add \"completionNotes\" for the task you completed."
-
-    COMPLETION_INSTRUCTIONS="Output: <promise>COMPLETE</promise>
-ONLY DO ONE TASK AT A TIME."
-
     TASK_ITEM="task"
+    PROGRESS_CHECKLIST_ITEM="- [ ] progress.txt is updated with what you did"
+    PRE_COMMIT_EXTRA_ITEM="- [ ] Update the PRD file ($PRD_FILE): set \"passes\": true and add \"completionNotes\" for the task you completed"
+    STAGE_INSTRUCTION="Stage ALL modified files (including progress.txt and any PRD files)"
 }
 
 fetch_github_tasks() {
@@ -382,13 +399,10 @@ $ISSUES"
 $ISSUES"
     fi
 
-    # No extra pre-commit instructions for GitHub mode
-    PRE_COMMIT_EXTRA=""
-
-    COMPLETION_INSTRUCTIONS="Output: <promise>COMPLETE</promise>
-ONLY DO ONE ISSUE AT A TIME."
-
     TASK_ITEM="issue"
+    PROGRESS_CHECKLIST_ITEM="- [ ] Your commit message clearly describes what was done and why"
+    PRE_COMMIT_EXTRA_ITEM=""
+    STAGE_INSTRUCTION="Stage all modified files"
 }
 
 case "$MODE" in
@@ -400,91 +414,27 @@ echo "Commit mode: $COMMIT_MODE"
 echo "Agent: $AGENT"
 
 # ============================================================
-# BUILD STRUCTURED PROMPT
+# BUILD DYNAMIC PROMPT SECTIONS
 # ============================================================
 
-# --- SECTION 1: CHOOSE THE TASK ---
+# --- Task selection instruction (only when --task is specified) ---
 if [ -n "$SPECIFIC_TASK" ]; then
-    SECTION_CHOOSE="## 1. Choose the Task
+    SPECIFIC_TASK_INSTRUCTION="**Work on $TASK_ITEM #$SPECIFIC_TASK specifically. Do NOT pick a different $TASK_ITEM.**
 
-Work on $TASK_ITEM #$SPECIFIC_TASK specifically. Do NOT pick a different $TASK_ITEM."
+"
     echo "Targeting specific $TASK_ITEM: #$SPECIFIC_TASK"
-elif [ "$MODE" = "prd" ]; then
-    SECTION_CHOOSE="## 1. Choose the Task
-
-Review the available ${TASK_ITEM}s and the progress file, then select ONE to work on:
-- Pick the next best $TASK_ITEM to work on, prioritising as you see fit
-- Fall back to the lowest-numbered $TASK_ITEM if priority isn't clear
-- Skip any already marked done in progress.txt"
 else
-    SECTION_CHOOSE="## 1. Choose the Task
-
-Review the available ${TASK_ITEM}s and the recent commit history, then select ONE to work on:
-- Pick the next best $TASK_ITEM to work on, prioritising as you see fit
-- Fall back to the lowest-numbered $TASK_ITEM if priority isn't clear"
+    SPECIFIC_TASK_INSTRUCTION=""
 fi
 
-# --- SECTION 2: IMPLEMENT WITH FEEDBACK LOOPS ---
-SECTION_IMPLEMENT="## 2. Implement the Task
-
-Work through the $TASK_ITEM systematically, using ALL available feedback loops to ensure code works as intended and passes all checks.
-
-### Available Feedback Loops
-Use these to verify your changes are working:
-- **Automated tests**: Run the test suite frequently as you make changes
-- **Linter/Type checker**: Check for code quality issues and type errors  
-- **Manual testing**: Test the actual behavior in a browser/terminal/REPL
-- **Build**: Ensure the project compiles/builds without errors
-- **AGENTS.md**: Check for project-specific standards, commands, and guidelines
-
-### Implementation Approach
-1. Understand the requirements fully before writing code
-2. Make incremental changes, testing after each significant change
-3. If tests exist, run them early and often
-4. If no tests exist for your changes, consider adding them
-5. Verify the fix/feature works manually, not just that tests pass
-6. Keep iterating until you meet the Definition of Done"
-
-# --- SECTION 3: DEFINITION OF DONE ---
-# Progress tracking differs: PRD mode uses progress.txt, GitHub mode uses commit messages
+# --- Progress header (PRD vs GitHub) ---
 if [ "$MODE" = "prd" ]; then
-    PROGRESS_ITEM="- [ ] progress.txt is updated with what you did"
+    PROGRESS_HEADER="## Progress So Far"
 else
-    PROGRESS_ITEM="- [ ] Your commit message clearly describes what was done and why"
+    PROGRESS_HEADER="## Recent Commits"
 fi
 
-if [ "$COMMIT_MODE" = "pr" ]; then
-    SECTION_DONE="## 3. Definition of Done
-
-You are ONLY done when ALL of the following are true:
-- [ ] All automated tests pass
-- [ ] Linter/type checks pass (if available)
-- [ ] You have manually verified the change works as intended
-- [ ] Code follows project standards (check AGENTS.md)
-$PROGRESS_ITEM
-- [ ] If there are deployments, wait for them to succeed and re-verify your changes work${PRE_COMMIT_EXTRA:+
-- [ ] $PRE_COMMIT_EXTRA}"
-else
-    SECTION_DONE="## 3. Definition of Done
-
-You are ONLY done when ALL of the following are true:
-- [ ] All automated tests pass
-- [ ] Linter/type checks pass (if available)  
-- [ ] You have manually verified the change works as intended
-- [ ] Code follows project standards (check AGENTS.md)
-$PROGRESS_ITEM
-- [ ] If there are deployments, wait for them to succeed and re-verify your changes work${PRE_COMMIT_EXTRA:+
-- [ ] $PRE_COMMIT_EXTRA}"
-fi
-
-# --- SECTION 4: DELIVER ---
-# Stage instruction differs: PRD mode includes progress.txt, GitHub mode doesn't
-if [ "$MODE" = "prd" ]; then
-    STAGE_INSTRUCTION="Stage ALL modified files (including progress.txt and any PRD files)"
-else
-    STAGE_INSTRUCTION="Stage all modified files"
-fi
-
+# --- Delivery steps (based on commit mode) ---
 if [ "$COMMIT_MODE" = "pr" ]; then
     DELIVER_STEPS="1. Create a feature branch (e.g., feature/123-short-description)
 2. $STAGE_INSTRUCTION
@@ -523,13 +473,7 @@ else
     esac
 fi
 
-SECTION_DELIVER="## 4. Deliver
-
-ONLY after meeting ALL criteria in 'Definition of Done':
-
-$DELIVER_STEPS"
-
-# --- SECTION 5: CODE REVIEW (optional, only for PR mode with agent review) ---
+# --- Code review section (only for PR mode with copilot) ---
 SECTION_REVIEW=""
 if [ "$COMMIT_MODE" = "pr" ] && [ "$AGENT_REVIEW" = "copilot" ]; then
     SECTION_REVIEW="## 5. Code Review
@@ -553,52 +497,46 @@ After opening the PR, you must get approval from GitHub Copilot code review.
    - Copilot marks the review as **APPROVED**, or
    - Copilot comments with \"no further comments\"
 
-**Do not stop early. Keep going until fully approved.**"
-fi
+**Do not stop early. Keep going until fully approved.**
 
-# Adjust final completion message based on whether review is required
-if [ -n "$SECTION_REVIEW" ]; then
-    COMPLETION_MESSAGE="When the PR is approved and all checks pass, output: <promise>COMPLETE</promise>"
-else
-    COMPLETION_MESSAGE="When complete, output: <promise>COMPLETE</promise>"
+---
+
+"
 fi
 
 # ============================================================
 # ASSEMBLE FINAL PROMPT
 # ============================================================
-if [ "$MODE" = "prd" ]; then
-    PROGRESS_HEADER="## Progress So Far"
-else
-    PROGRESS_HEADER="## Recent Commits"
-fi
 
-if [ -n "$SECTION_REVIEW" ]; then
-    SECTION_REVIEW_BLOCK="$SECTION_REVIEW
+# Ensure global template is up to date
+ensure_global_template
 
----"
-else
-    SECTION_REVIEW_BLOCK=""
-fi
-
-IMPORTANT_MESSAGE="**IMPORTANT**: Only work on ONE $TASK_ITEM."
-
-TEMPLATE_PATH="$SCRIPT_DIR/templates/prompt-once.md"
+# Template lookup order: project override > global > source
 if [ -f ".ralph/prompt-once.md" ]; then
     TEMPLATE_PATH=".ralph/prompt-once.md"
+elif [ -f "$GLOBAL_CONFIG_DIR/templates/prompt-once.md" ]; then
+    TEMPLATE_PATH="$GLOBAL_CONFIG_DIR/templates/prompt-once.md"
+elif [ -f "$SCRIPT_DIR/templates/prompt-once.md" ]; then
+    TEMPLATE_PATH="$SCRIPT_DIR/templates/prompt-once.md"
+else
+    echo "Error: No prompt template found. Checked:"
+    echo "  - .ralph/prompt-once.md"
+    echo "  - $GLOBAL_CONFIG_DIR/templates/prompt-once.md"
+    echo "  - $SCRIPT_DIR/templates/prompt-once.md"
+    exit 1
 fi
 
 PROMPT_TEMPLATE=$(sed '/<!-- TEMPLATE_DOCS_START -->/,/<!-- TEMPLATE_DOCS_END -->/d' "$TEMPLATE_PATH")
 PROMPT="$PROMPT_TEMPLATE"
 PROMPT="${PROMPT//\{\{TASK_CONTEXT\}\}/$TASK_CONTEXT}"
+PROMPT="${PROMPT//\{\{TASK_ITEM\}\}/$TASK_ITEM}"
 PROMPT="${PROMPT//\{\{PROGRESS_HEADER\}\}/$PROGRESS_HEADER}"
 PROMPT="${PROMPT//\{\{PROGRESS\}\}/$PROGRESS}"
-PROMPT="${PROMPT//\{\{SECTION_CHOOSE\}\}/$SECTION_CHOOSE}"
-PROMPT="${PROMPT//\{\{SECTION_IMPLEMENT\}\}/$SECTION_IMPLEMENT}"
-PROMPT="${PROMPT//\{\{SECTION_DONE\}\}/$SECTION_DONE}"
-PROMPT="${PROMPT//\{\{SECTION_DELIVER\}\}/$SECTION_DELIVER}"
-PROMPT="${PROMPT//\{\{SECTION_REVIEW_BLOCK\}\}/$SECTION_REVIEW_BLOCK}"
-PROMPT="${PROMPT//\{\{COMPLETION_MESSAGE\}\}/$COMPLETION_MESSAGE}"
-PROMPT="${PROMPT//\{\{IMPORTANT_MESSAGE\}\}/$IMPORTANT_MESSAGE}"
+PROMPT="${PROMPT//\{\{SPECIFIC_TASK_INSTRUCTION\}\}/$SPECIFIC_TASK_INSTRUCTION}"
+PROMPT="${PROMPT//\{\{PROGRESS_CHECKLIST_ITEM\}\}/$PROGRESS_CHECKLIST_ITEM}"
+PROMPT="${PROMPT//\{\{PRE_COMMIT_EXTRA_ITEM\}\}/$PRE_COMMIT_EXTRA_ITEM}"
+PROMPT="${PROMPT//\{\{DELIVER_STEPS\}\}/$DELIVER_STEPS}"
+PROMPT="${PROMPT//\{\{SECTION_REVIEW\}\}/$SECTION_REVIEW}"
 
 check_dependency "$AGENT"
 
