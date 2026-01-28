@@ -9,6 +9,7 @@ set -e
 
 CONFIG_FILE="/workspace/.ralph/config.json"
 PROJECT_PROMPT_FILE="/ralph/prompt.md"
+DEFAULT_TEMPLATE="/usr/local/share/ralph/prompt-template.md"
 
 normalize_repo() {
     echo "$1" | sed -E 's|^https?://||; s|.*github\.com[:/]||; s|\.git$||; s|/$||'
@@ -326,75 +327,37 @@ echo "Commit mode: $COMMIT_MODE"
 echo "Agent: $AGENT_CLI"
 
 # ============================================================
-# Build Structured Prompt (aligned with ralph-once.sh)
+# Build Dynamic Prompt Sections (shared with ralph-once.sh)
 # ============================================================
+
+# --- Task selection instruction (only when --task is specified) ---
 if [ "$MODE" = "prompt" ]; then
-    SECTION_CHOOSE="## 1. Choose the Task
+    SPECIFIC_TASK_INSTRUCTION="**Work on the custom task described above. Do NOT pick a different task.**
 
-Work on the custom task described above. Do NOT pick a different task."
+"
 elif [ -n "$SPECIFIC_TASK" ]; then
-    SECTION_CHOOSE="## 1. Choose the Task
+    SPECIFIC_TASK_INSTRUCTION="**Work on $TASK_ITEM #$SPECIFIC_TASK specifically. Do NOT pick a different $TASK_ITEM.**
 
-Work on $TASK_ITEM #$SPECIFIC_TASK specifically. Do NOT pick a different $TASK_ITEM."
+"
     echo "Targeting specific $TASK_ITEM: #$SPECIFIC_TASK"
-elif [ "$MODE" = "prd" ]; then
-    SECTION_CHOOSE="## 1. Choose the Task
-
-Review the available ${TASK_ITEM}s and the progress file, then select ONE to work on:
-- Pick the next best $TASK_ITEM to work on, prioritising as you see fit
-- Fall back to the lowest-numbered $TASK_ITEM if priority isn't clear
-- Skip any already marked done in progress.txt"
 else
-    SECTION_CHOOSE="## 1. Choose the Task
-
-Review the available ${TASK_ITEM}s and the recent commit history, then select ONE to work on:
-- Pick the next best $TASK_ITEM to work on, prioritising as you see fit
-- Fall back to the lowest-numbered $TASK_ITEM if priority isn't clear"
+    SPECIFIC_TASK_INSTRUCTION=""
 fi
 
-SECTION_IMPLEMENT="## 2. Implement the Task
-
-Work through the $TASK_ITEM systematically, using ALL available feedback loops to ensure code works as intended and passes all checks.
-
-### Available Feedback Loops
-Use these to verify your changes are working:
-- **Automated tests**: Run the test suite frequently as you make changes
-- **Linter/Type checker**: Check for code quality issues and type errors
-- **Manual testing**: Test the actual behavior in a browser/terminal/REPL
-- **Build**: Ensure the project compiles/builds without errors
-- **AGENTS.md**: Check for project-specific standards, commands, and guidelines
-
-### Implementation Approach
-1. Understand the requirements fully before writing code
-2. Make incremental changes, testing after each significant change
-3. If tests exist, run them early and often
-4. If no tests exist for your changes, consider adding them
-5. Verify the fix/feature works manually, not just that tests pass
-6. Keep iterating until you meet the Definition of Done"
-
+# --- Progress header (PRD vs GitHub) ---
 if [ "$MODE" = "prd" ]; then
-    PROGRESS_ITEM="- [ ] progress.txt is updated with what you did"
-else
-    PROGRESS_ITEM="- [ ] Your commit message clearly describes what was done and why"
-fi
-
-SECTION_DONE="## 3. Definition of Done
-
-You are ONLY done when ALL of the following are true:
-- [ ] All automated tests pass
-- [ ] Linter/type checks pass (if available)
-- [ ] You have manually verified the change works as intended
-- [ ] Code follows project standards (check AGENTS.md)
-$PROGRESS_ITEM
-- [ ] If there are deployments, wait for them to succeed and re-verify your changes work${PRE_COMMIT_EXTRA:+
-- [ ] $PRE_COMMIT_EXTRA}"
-
-if [ "$MODE" = "prd" ]; then
+    PROGRESS_HEADER="## Progress So Far"
+    PROGRESS_CHECKLIST_ITEM="- [ ] progress.txt is updated with what you did"
+    PRE_COMMIT_EXTRA_ITEM="- [ ] Update the PRD file ($PRD_FILE): set \"passes\": true and add \"completionNotes\" for the task you completed"
     STAGE_INSTRUCTION="Stage ALL modified files (including progress.txt and any PRD files)"
 else
+    PROGRESS_HEADER="## Recent Commits"
+    PROGRESS_CHECKLIST_ITEM="- [ ] Your commit message clearly describes what was done and why"
+    PRE_COMMIT_EXTRA_ITEM=""
     STAGE_INSTRUCTION="Stage all modified files"
 fi
 
+# --- Delivery steps (based on commit mode) ---
 if [ "$COMMIT_MODE" = "pr" ]; then
     DELIVER_STEPS="1. Create a feature branch (e.g., feature/123-short-description)
 2. $STAGE_INSTRUCTION
@@ -433,12 +396,7 @@ else
     esac
 fi
 
-SECTION_DELIVER="## 4. Deliver
-
-ONLY after meeting ALL criteria in 'Definition of Done':
-
-$DELIVER_STEPS"
-
+# --- Code review section (only for PR mode with copilot) ---
 SECTION_REVIEW=""
 if [ "$COMMIT_MODE" = "pr" ] && [ "$AGENT_REVIEW" = "copilot" ]; then
     SECTION_REVIEW="## 5. Code Review
@@ -462,70 +420,54 @@ After opening the PR, you must get approval from GitHub Copilot code review.
    - Copilot marks the review as **APPROVED**, or
    - Copilot comments with \"no further comments\"
 
-**Do not stop early. Keep going until fully approved.**"
+**Do not stop early. Keep going until fully approved.**
+
+---
+
+"
 fi
 
-if [ -n "$SECTION_REVIEW" ]; then
-    COMPLETION_MESSAGE="When the PR is approved and all checks pass, output: <promise>COMPLETE</promise>"
-else
-    COMPLETION_MESSAGE="When complete, output: <promise>COMPLETE</promise>"
-fi
-
-if [ "$MODE" = "prd" ]; then
-    PROGRESS_HEADER="## Progress So Far"
-else
-    PROGRESS_HEADER="## Recent Commits"
-fi
-
-PROJECT_SECTION=""
+# --- Project instructions (Docker only, from ralph/prompt.md) ---
+PROJECT_INSTRUCTIONS=""
 if [ -s "$PROJECT_PROMPT_FILE" ]; then
-    PROJECT_SECTION="## Project Instructions
+    PROJECT_INSTRUCTIONS="## Project Instructions
 
-$(cat "$PROJECT_PROMPT_FILE")"
+$(cat "$PROJECT_PROMPT_FILE")
+
+---
+
+"
 fi
 
-PROMPT="# Task Assignment
+# ============================================================
+# Assemble Final Prompt from Template
+# ============================================================
 
-$TASK_CONTEXT
+# Template lookup: project override > default
+if [ -f "/workspace/.ralph/prompt-once.md" ]; then
+    TEMPLATE_PATH="/workspace/.ralph/prompt-once.md"
+elif [ -f "$DEFAULT_TEMPLATE" ]; then
+    TEMPLATE_PATH="$DEFAULT_TEMPLATE"
+else
+    echo "Error: No prompt template found"
+    exit 1
+fi
 
----
+# Read template and strip documentation block
+PROMPT_TEMPLATE=$(sed '/<!-- TEMPLATE_DOCS_START -->/,/<!-- TEMPLATE_DOCS_END -->/d' "$TEMPLATE_PATH")
 
-$PROGRESS_HEADER
-
-\`\`\`
-$PROGRESS
-\`\`\`
-
----
-
-$SECTION_CHOOSE
-
----
-
-$SECTION_IMPLEMENT
-
----
-
-$SECTION_DONE
-
----
-
-$SECTION_DELIVER
-
----
-${SECTION_REVIEW:+
-$SECTION_REVIEW
-
----
-}
-${PROJECT_SECTION:+
-$PROJECT_SECTION
-
----
-}
-$COMPLETION_MESSAGE
-
-**IMPORTANT**: Only work on ONE $TASK_ITEM."
+# Replace placeholders
+PROMPT="$PROMPT_TEMPLATE"
+PROMPT="${PROMPT//\{\{TASK_CONTEXT\}\}/$TASK_CONTEXT}"
+PROMPT="${PROMPT//\{\{TASK_ITEM\}\}/$TASK_ITEM}"
+PROMPT="${PROMPT//\{\{PROGRESS_HEADER\}\}/$PROGRESS_HEADER}"
+PROMPT="${PROMPT//\{\{PROGRESS\}\}/$PROGRESS}"
+PROMPT="${PROMPT//\{\{SPECIFIC_TASK_INSTRUCTION\}\}/$SPECIFIC_TASK_INSTRUCTION}"
+PROMPT="${PROMPT//\{\{PROGRESS_CHECKLIST_ITEM\}\}/$PROGRESS_CHECKLIST_ITEM}"
+PROMPT="${PROMPT//\{\{PRE_COMMIT_EXTRA_ITEM\}\}/$PRE_COMMIT_EXTRA_ITEM}"
+PROMPT="${PROMPT//\{\{DELIVER_STEPS\}\}/$DELIVER_STEPS}"
+PROMPT="${PROMPT//\{\{SECTION_REVIEW\}\}/$SECTION_REVIEW}"
+PROMPT="${PROMPT//\{\{PROJECT_INSTRUCTIONS\}\}/$PROJECT_INSTRUCTIONS}"
 
 check_dependency "$AGENT_CLI"
 

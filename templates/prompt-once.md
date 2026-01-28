@@ -19,6 +19,7 @@ These placeholders are replaced at runtime:
 - `{{PRE_COMMIT_EXTRA_ITEM}}` - PRD-only: checklist item to update PRD file
 - `{{DELIVER_STEPS}}` - Delivery instructions based on commit mode (pr/main/commit/branch/none)
 - `{{SECTION_REVIEW}}` - Code review section (only when --copilot is used)
+- `{{PROJECT_INSTRUCTIONS}}` - Project-specific instructions from ralph/prompt.md (Docker only)
 
 ## Notes
 
@@ -94,6 +95,7 @@ ONLY after meeting ALL criteria in 'Definition of Done':
 ---
 
 {{SECTION_REVIEW}}
+{{PROJECT_INSTRUCTIONS}}
 When complete, output: <promise>COMPLETE</promise>
 
 **IMPORTANT**: Only work on ONE {{TASK_ITEM}}.

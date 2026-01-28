@@ -45,8 +45,9 @@ RUN git config --global user.name "Ralph Bot" \
 # Back to root for project-specific setup (projects will switch to ralph at the end)
 USER root
 
-# Copy the generic entrypoint
-COPY entrypoint.sh /usr/local/bin/ralph-entrypoint.sh
+# Copy the generic entrypoint and shared template
+COPY docker/entrypoint.sh /usr/local/bin/ralph-entrypoint.sh
+COPY templates/prompt-once.md /usr/local/share/ralph/prompt-template.md
 RUN chmod +x /usr/local/bin/ralph-entrypoint.sh
 
 # Default workspace (projects override this)
