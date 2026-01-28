@@ -120,10 +120,11 @@ your-project/
 
 Run `ralph.sh init` to create this from templates.
 
-### Claude CLI (Docker)
+### Agent Settings (Docker)
 
 - Base image includes the `claude` CLI.
 - `ralph.sh` mounts host Claude settings when present (`~/.claude`, `~/.config/claude`, `~/.config/anthropic`).
+- `ralph.sh` also mounts host opencode settings (`~/.config/opencode`) and copies them into the container config.
 - Set `"agent": "claude"` in `.ralph/config.json` to use it.
 
 ### Configuration (`.ralph/config.json`)

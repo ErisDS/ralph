@@ -182,6 +182,11 @@ fi
 echo "Setting up opencode configuration..."
 mkdir -p "$HOME/.config/opencode"
 
+HOST_OPENCODE_DIR="/home/ralph/.config/opencode-host"
+if [ -d "$HOST_OPENCODE_DIR" ]; then
+    cp -R "$HOST_OPENCODE_DIR"/. "$HOME/.config/opencode/" || true
+fi
+
 if [ -f "/ralph/opencode.json" ]; then
     cp /ralph/opencode.json "$HOME/.config/opencode/opencode.json"
 else

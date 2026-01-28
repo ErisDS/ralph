@@ -380,7 +380,7 @@ cmd_start() {
 
     local opencode_config_dir="$HOME/.config/opencode"
     if [ -d "$opencode_config_dir" ]; then
-        docker_args+=(-v "$opencode_config_dir:/home/ralph/.config/opencode:ro")
+        docker_args+=(-v "$opencode_config_dir:/home/ralph/.config/opencode-host:ro")
     fi
 
     local claude_config_dir="$HOME/.config/claude"
