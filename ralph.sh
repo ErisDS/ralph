@@ -140,7 +140,10 @@ Examples:
   ralph.sh build                         # Build project image
   ralph.sh start                         # Let Ralph choose a task
   ralph.sh start --issue 42              # Start agent on issue
+  ralph.sh start issue 42                # Start agent using type + id
   ralph.sh attach issue-42               # Connect for follow-up work
+  ralph.sh attach issue 42               # Connect using type + id
+  ralph.sh attach --issue 42             # Connect using flags
   ralph.sh list                          # List all containers
   ralph.sh logs -f issue-42              # Follow logs
   ralph.sh stop --all                    # Stop all containers
@@ -271,13 +274,31 @@ cmd_start() {
                 task_id="issue-$2"
                 shift 2
                 ;;
+            issue)
+                task_type="issue"
+                task_value="$2"
+                task_id="issue-$2"
+                shift 2
+                ;;
             --prd)
                 task_type="prd"
                 task_value="$2"
                 task_id="prd-$(basename "$2")"
                 shift 2
                 ;;
+            prd)
+                task_type="prd"
+                task_value="$2"
+                task_id="prd-$(basename "$2")"
+                shift 2
+                ;;
             --prompt)
+                task_type="prompt"
+                task_value="$2"
+                task_id="custom-$(date +%s)"
+                shift 2
+                ;;
+            prompt)
                 task_type="prompt"
                 task_value="$2"
                 task_id="custom-$(date +%s)"
@@ -483,6 +504,8 @@ cmd_stop() {
     
     local stop_all=false
     local task_id=""
+    local task_type=""
+    local task_value=""
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -490,12 +513,52 @@ cmd_stop() {
                 stop_all=true
                 shift
                 ;;
+            --issue|--task)
+                task_type="issue"
+                task_value="$2"
+                shift 2
+                ;;
+            --prd)
+                task_type="prd"
+                task_value="$2"
+                shift 2
+                ;;
+            --prompt)
+                task_type="prompt"
+                task_value="$2"
+                shift 2
+                ;;
+            issue)
+                task_type="issue"
+                task_value="$2"
+                shift 2
+                ;;
+            prd)
+                task_type="prd"
+                task_value="$2"
+                shift 2
+                ;;
+            prompt)
+                task_type="prompt"
+                task_value="$2"
+                shift 2
+                ;;
             *)
-                task_id="$1"
+                if [ -z "$task_id" ]; then
+                    task_id="$1"
+                fi
                 shift
                 ;;
         esac
     done
+
+    if [ -n "$task_type" ]; then
+        case "$task_type" in
+            issue) task_id="issue-$task_value" ;;
+            prd) task_id="prd-$(basename "$task_value")" ;;
+            prompt) task_id="$task_value" ;;
+        esac
+    fi
     
     if [ "$stop_all" = true ]; then
         local filter="name=${CONTAINER_PREFIX}-"
@@ -519,7 +582,7 @@ cmd_stop() {
     
     if [ -z "$task_id" ]; then
         log_error "Must specify a task ID or --all"
-        echo "Usage: ralph.sh stop <task-id> | --all"
+        echo "Usage: ralph.sh stop <task-id> | ralph.sh stop --issue <number> | --all"
         exit 1
     fi
     
@@ -672,11 +735,57 @@ cmd_attach() {
         project_name=$(get_project_name "$config_dir")
     fi
     
-    local task_id="$1"
-    
+    local task_id=""
+    local task_type=""
+    local task_value=""
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --issue|--task)
+                task_type="issue"
+                task_value="$2"
+                shift 2
+                ;;
+            --prd)
+                task_type="prd"
+                task_value="$2"
+                shift 2
+                ;;
+            --prompt)
+                task_type="prompt"
+                task_value="$2"
+                shift 2
+                ;;
+            issue)
+                task_type="issue"
+                task_value="$2"
+                shift 2
+                ;;
+            prd)
+                task_type="prd"
+                task_value="$2"
+                shift 2
+                ;;
+            *)
+                if [ -z "$task_id" ]; then
+                    task_id="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    if [ -n "$task_type" ]; then
+        case "$task_type" in
+            issue) task_id="issue-$task_value" ;;
+            prd) task_id="prd-$(basename "$task_value")" ;;
+            prompt) task_id="$task_value" ;;
+        esac
+    fi
+
     if [ -z "$task_id" ]; then
         log_error "Must specify a task ID"
-        echo "Usage: ralph.sh attach <task-id>"
+        echo "Usage: ralph.sh attach <task-id> | ralph.sh attach --issue <number>"
         exit 1
     fi
     
