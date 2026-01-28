@@ -1,0 +1,8 @@
+{
+  "mode": "github",
+  "commitMode": "pr",
+  "repo": "your-org/your-project",
+  "prdFile": "./prd.json",
+  "agent": "opencode",
+  "agentReview": ""
+}

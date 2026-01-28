@@ -40,12 +40,12 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-# Find ralph config directory (look for ralph/ralph.json)
+# Find project root (look for .ralph/config.json)
 find_ralph_config() {
     local dir="$PWD"
     while [ "$dir" != "/" ]; do
-        if [ -f "$dir/ralph/ralph.json" ]; then
-            echo "$dir/ralph"
+        if [ -f "$dir/.ralph/config.json" ]; then
+            echo "$dir"
             return 0
         fi
         dir="$(dirname "$dir")"
@@ -53,10 +53,21 @@ find_ralph_config() {
     return 1
 }
 
+get_config_file() {
+    local root="$1"
+    if [ -f "$root/.ralph/config.json" ]; then
+        echo "$root/.ralph/config.json"
+        return 0
+    fi
+    return 1
+}
+
 # Get project name from config
 get_project_name() {
-    local config_dir="$1"
-    jq -r '.repo.name // "project"' "$config_dir/ralph.json" | tr '[:upper:]' '[:lower:]'
+    local root="$1"
+    local config_file
+    config_file=$(get_config_file "$root") || { echo "project"; return; }
+    jq -r 'if (.repo|type) == "string" then ((.repo | split("/"))[-1] // "project") elif (.repo.name) then .repo.name else "project" end' "$config_file" | tr '[:upper:]' '[:lower:]'
 }
 
 # Get image name for project
@@ -117,14 +128,17 @@ Commands:
   init                 Initialize ralph config in current project
 
 Start Options:
-  --issue <number>     Work on a GitHub issue
-  --prd <story-id>     Work on a PRD user story
-  --prompt <text>      Work on a custom prompt
+  --issue <number>     Work on a specific GitHub issue
+  --task <number>      Alias for --issue
+  --prd <file>         Use PRD mode with the given PRD file
+  --prompt <text>      Use a custom prompt
+  (no args)            Let Ralph choose its own task based on config.json
 
 Examples:
   ralph.sh build-base                    # Build base image (one time)
   ralph.sh init                          # Set up ralph in current project
   ralph.sh build                         # Build project image
+  ralph.sh start                         # Let Ralph choose a task
   ralph.sh start --issue 42              # Start agent on issue
   ralph.sh attach issue-42               # Connect for follow-up work
   ralph.sh list                          # List all containers
@@ -151,37 +165,57 @@ cmd_build_base() {
 cmd_init() {
     local target_dir="${1:-.}"
     
-    if [ -d "$target_dir/ralph" ]; then
-        log_error "ralph/ directory already exists"
-        exit 1
-    fi
-    
     log_info "Initializing ralph in $target_dir..."
     
-    mkdir -p "$target_dir/ralph"
+    mkdir -p "$target_dir/ralph" "$target_dir/.ralph"
     
-    # Copy templates
-    cp "$SCRIPT_DIR/templates/ralph.json" "$target_dir/ralph/"
-    cp "$SCRIPT_DIR/templates/Dockerfile" "$target_dir/ralph/"
-    cp "$SCRIPT_DIR/templates/prompt.md" "$target_dir/ralph/"
+    if [ -f "$target_dir/.ralph/config.json" ]; then
+        log_warn ".ralph/config.json already exists, leaving it unchanged"
+    else
+        cp "$SCRIPT_DIR/templates/config.json" "$target_dir/.ralph/config.json"
+        log_info "Created .ralph/config.json"
+    fi
     
-    log_success "Created ralph/ directory with templates"
+    if [ -f "$target_dir/ralph/Dockerfile" ]; then
+        log_warn "ralph/Dockerfile already exists, leaving it unchanged"
+    else
+        cp "$SCRIPT_DIR/templates/Dockerfile" "$target_dir/ralph/"
+    fi
+    
+    if [ -f "$target_dir/ralph/prompt.md" ]; then
+        log_warn "ralph/prompt.md already exists, leaving it unchanged"
+    else
+        cp "$SCRIPT_DIR/templates/prompt.md" "$target_dir/ralph/"
+    fi
+    
+    log_success "Ralph config initialized"
     echo ""
     echo "Next steps:"
-    echo "  1. Edit ralph/ralph.json with your project details"
+    echo "  1. Edit .ralph/config.json with your project details"
     echo "  2. Edit ralph/Dockerfile if needed"
     echo "  3. Run: ralph.sh build"
     echo "  4. Run: ralph.sh start --issue <number>"
 }
 
 cmd_build() {
-    local config_dir
-    if ! config_dir=$(find_ralph_config); then
-        log_error "No ralph/ralph.json found. Run 'ralph.sh init' first."
+    local project_root
+    if ! project_root=$(find_ralph_config); then
+        log_error "No config found (.ralph/config.json). Run 'ralph.sh init' first."
         exit 1
     fi
     
-    local project_name=$(get_project_name "$config_dir")
+    local config_file
+    if ! config_file=$(get_config_file "$project_root"); then
+        log_error "No config file found. Run 'ralph.sh init' first."
+        exit 1
+    fi
+    
+    if [ ! -f "$project_root/ralph/Dockerfile" ]; then
+        log_error "No ralph/Dockerfile found. Run 'ralph.sh init' first."
+        exit 1
+    fi
+    
+    local project_name=$(get_project_name "$project_root")
     local image_name=$(get_image_name "$project_name")
     
     log_info "Building image for project: $project_name"
@@ -203,19 +237,25 @@ cmd_build() {
     fi
     
     # Build from the project's ralph directory
-    docker build $build_args -t "$image_name" "$config_dir"
+    docker build $build_args -t "$image_name" "$project_root/ralph"
     
     log_success "Image built: $image_name"
 }
 
 cmd_start() {
-    local config_dir
-    if ! config_dir=$(find_ralph_config); then
-        log_error "No ralph/ralph.json found. Run 'ralph.sh init' first."
+    local project_root
+    if ! project_root=$(find_ralph_config); then
+        log_error "No config found (.ralph/config.json). Run 'ralph.sh init' first."
         exit 1
     fi
     
-    local project_name=$(get_project_name "$config_dir")
+    local config_file
+    if ! config_file=$(get_config_file "$project_root"); then
+        log_error "No config file found. Run 'ralph.sh init' first."
+        exit 1
+    fi
+    
+    local project_name=$(get_project_name "$project_root")
     local image_name=$(get_image_name "$project_name")
     
     local task_type=""
@@ -225,7 +265,7 @@ cmd_start() {
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
-            --issue)
+            --issue|--task)
                 task_type="issue"
                 task_value="$2"
                 task_id="issue-$2"
@@ -234,7 +274,7 @@ cmd_start() {
             --prd)
                 task_type="prd"
                 task_value="$2"
-                task_id="$2"
+                task_id="prd-$(basename "$2")"
                 shift 2
                 ;;
             --prompt)
@@ -252,9 +292,7 @@ cmd_start() {
     done
     
     if [ -z "$task_type" ]; then
-        log_error "Must specify --issue, --prd, or --prompt"
-        show_usage
-        exit 1
+        task_id="auto-$(date +%s)"
     fi
     
     # Check prerequisites
@@ -263,9 +301,18 @@ cmd_start() {
         exit 1
     fi
     
-    if [ -z "$GITHUB_TOKEN" ]; then
-        log_error "GITHUB_TOKEN environment variable is required"
-        exit 1
+    local mode_from_config
+    mode_from_config=$(jq -r '.mode // "github"' "$config_file")
+
+    if [ "$task_type" = "issue" ] || { [ -z "$task_type" ] && [ "$mode_from_config" = "github" ]; }; then
+        if [ -z "$GITHUB_TOKEN" ]; then
+            log_error "GITHUB_TOKEN environment variable is required"
+            exit 1
+        fi
+    else
+        if [ -z "$GITHUB_TOKEN" ]; then
+            log_warn "GITHUB_TOKEN not set. GitHub operations may fail."
+        fi
     fi
     
     local cname=$(container_name "$project_name" "$task_id")
@@ -293,20 +340,36 @@ cmd_start() {
         --cpus="$cpus"
         --memory="$memory"
         -e "GITHUB_TOKEN=$GITHUB_TOKEN"
+        -e "RALPH_TASK_ID=$task_id"
     )
+
+    if [ -d "$project_root/.ralph" ]; then
+        docker_args+=(-v "$project_root/.ralph:/workspace/.ralph:ro")
+    fi
     
     # Add ANTHROPIC_API_KEY if set
     if [ -n "$ANTHROPIC_API_KEY" ]; then
         docker_args+=(-e "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
     fi
+
+    local opencode_auth_file="$HOME/.local/share/opencode/auth.json"
+    if [ -f "$opencode_auth_file" ]; then
+        docker_args+=(-v "$opencode_auth_file:/home/ralph/.local/share/opencode/auth.json:ro")
+    fi
     
     # Add image and entrypoint args
     docker_args+=("$image_name")
-    docker_args+=("--$task_type" "$task_value")
+    if [ -n "$task_type" ]; then
+        docker_args+=("--$task_type" "$task_value")
+    fi
     
     log_info "Starting container: $cname"
     log_info "Project: $project_name"
-    log_info "Task: $task_type = $task_value"
+    if [ -n "$task_type" ]; then
+        log_info "Task: $task_type = $task_value"
+    else
+        log_info "Task: auto (config)"
+    fi
     log_info "Resources: $cpus CPUs, $memory memory"
     
     docker "${docker_args[@]}"

@@ -21,10 +21,21 @@ Run multiple agents simultaneously in isolated Docker containers. Each agent get
 ```bash
 ralph.sh build-base              # Build base image (one time)
 ralph.sh build                   # Build project image
+ralph.sh start                   # Let Ralph choose a task
 ralph.sh start --issue 42        # Start agent on issue 42
-ralph.sh start --issue 43        # Start another agent on issue 43
 ralph.sh list                    # See all running agents
 ```
+
+---
+
+## Key Learnings
+
+- GitHub mode uses the last 10 commit messages as context; write clear commit messages with what/why.
+- PRD mode relies on `progress.txt`; keep it updated as tasks complete.
+- `--issue` can target epics with tasklists; Ralph will choose the best open sub-issue.
+- "Dependency Dashboard" issues are ignored automatically.
+- `--copilot` (or `agentReview: "copilot"`) adds a required Copilot review loop before completion.
+- Add project-specific commands, manual testing steps, or deploy checks in `ralph/prompt.md`.
 
 ---
 
@@ -53,9 +64,9 @@ ralph.sh list                    # See all running agents
 │  │  ─────────────                                              │ │
 │  │  Runs INSIDE each container when it starts                  │ │
 │  │  - Fetches latest code from GitHub                          │ │
-│  │  - Creates feature branch                                   │ │
-│  │  - Runs opencode with the task prompt                       │ │
-│  │  - Pushes branch & creates PR when done                     │ │
+│  │  - Builds a task prompt from issues/PRD                     │ │
+│  │  - Runs opencode with Ralph's tuned instructions            │ │
+│  │  - Leaves the container running for follow-up               │ │
 │  │                                                             │ │
 │  │  /workspace/  ← Project repo clone (isolated)               │ │
 │  │                                                             │ │
@@ -63,7 +74,7 @@ ralph.sh list                    # See all running agents
 │                                                                  │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
 │  │ Container 1 │  │ Container 2 │  │ Container 3 │   ...        │
-│  │ issue-42    │  │ issue-43    │  │ US-001      │              │
+│  │ auto-123    │  │ issue-42    │  │ prd-foo     │              │
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -82,36 +93,40 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 cd ~/your-project
 ~/path/to/ralph/ralph.sh init
 
-# 4. Edit ralph/ralph.json with your project details
+# 4. Edit .ralph/config.json with your project details
 
 # 5. Build project image
 ~/path/to/ralph/ralph.sh build
 
 # 6. Start agents
+~/path/to/ralph/ralph.sh start
 ~/path/to/ralph/ralph.sh start --issue 42
-~/path/to/ralph/ralph.sh start --issue 43
 ```
 
 ### Project Setup
 
-Each project needs a `ralph/` directory with configuration:
+Each project uses `.ralph/config.json` (shared with `ralph-once.sh`) plus a `ralph/` directory for Docker:
 
 ```
 your-project/
+├── .ralph/
+│   └── config.json      # Shared config (ralph-once + Docker)
 ├── ralph/
-│   ├── ralph.json       # Project configuration
 │   ├── Dockerfile       # Extends ralph-base
-│   ├── prompt.md        # Optional: custom prompt template
+│   ├── prompt.md        # Optional: project instructions to append
 │   └── opencode.json    # Optional: opencode config (MCP servers, etc.)
 └── ...
 ```
 
 Run `ralph.sh init` to create this from templates.
 
-### Configuration (`ralph.json`)
+### Configuration (`.ralph/config.json`)
 
 ```json
 {
+  "mode": "github",
+  "commitMode": "pr",
+  "prdFile": "./prd.json",
   "repo": {
     "owner": "your-org",
     "name": "your-project",
@@ -127,7 +142,9 @@ Run `ralph.sh init` to create this from templates.
     "check": "pnpm check"
   },
   "agent": {
-    "model": "anthropic/claude-sonnet-4-20250514"
+    "cli": "opencode",
+    "model": "anthropic/claude-sonnet-4-20250514",
+    "review": null
   },
   "git": {
     "branchPrefix": "ralph/",
@@ -137,6 +154,14 @@ Run `ralph.sh init` to create this from templates.
 }
 ```
 
+Notes:
+- `mode`: `github` or `prd`
+- `prdFile`: used when `mode` is `prd`
+- `commitMode`: `pr`, `main`, `commit`, `branch`, or `none`
+- `agent.review`: set to `copilot` to require Copilot review in PR mode
+
+Optional: add project-specific instructions in `ralph/prompt.md`. These are appended to Ralph's built-in prompt.
+
 ### Commands
 
 | Command                | Description                                  |
@@ -144,8 +169,9 @@ Run `ralph.sh init` to create this from templates.
 | `build-base`           | Build the ralph-base Docker image (one time) |
 | `init`                 | Initialize ralph config in current project   |
 | `build`                | Build project-specific image                 |
-| `start --issue N`      | Start agent on GitHub issue                  |
-| `start --prd ID`       | Start agent on PRD story                     |
+| `start`                | Start agent using config.json task selection |
+| `start --issue N`      | Start agent on a specific GitHub issue       |
+| `start --prd <file>`   | Start agent in PRD mode with given file      |
 | `start --prompt "..."` | Start agent with custom prompt               |
 | `list`                 | List all Ralph containers                    |
 | `logs [-f] ID`         | View container logs                          |

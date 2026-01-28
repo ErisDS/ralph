@@ -32,6 +32,10 @@ RUN npm install -g opencode-ai
 # Create non-root user (opencode refuses to run as root with dangerous permissions)
 RUN useradd -m -s /bin/bash ralph
 
+# Pre-create opencode state directories for ralph
+RUN mkdir -p /home/ralph/.local/share/opencode /home/ralph/.local/state \
+    && chown -R ralph:ralph /home/ralph/.local
+
 # Configure git defaults for ralph user
 USER ralph
 RUN git config --global user.name "Ralph Bot" \
