@@ -587,7 +587,7 @@ if [ -f ".ralph/prompt-once.md" ]; then
     TEMPLATE_PATH=".ralph/prompt-once.md"
 fi
 
-PROMPT_TEMPLATE=$(cat "$TEMPLATE_PATH")
+PROMPT_TEMPLATE=$(sed '/<!-- TEMPLATE_DOCS_START -->/,/<!-- TEMPLATE_DOCS_END -->/d' "$TEMPLATE_PATH")
 PROMPT="$PROMPT_TEMPLATE"
 PROMPT="${PROMPT//\{\{TASK_CONTEXT\}\}/$TASK_CONTEXT}"
 PROMPT="${PROMPT//\{\{PROGRESS_HEADER\}\}/$PROGRESS_HEADER}"
