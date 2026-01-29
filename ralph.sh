@@ -424,8 +424,8 @@ cmd_start() {
 
 cmd_list() {
     echo ""
-    printf "%-40s %-12s %-15s %s\n" "CONTAINER" "STATUS" "UPTIME" "TASK"
-    printf "%-40s %-12s %-15s %s\n" "────────────────────────────────────────" "────────────" "───────────────" "────────────────────"
+    printf "%-40s %-15s %-15s %s\n" "CONTAINER" "STATUS" "UPTIME" "TASK"
+    printf "%-40s %-15s %-15s %s\n" "────────────────────────────────────────" "───────────────" "───────────────" "────────────────────"
     
     docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}' | while IFS=$'\t' read -r name status; do
         # Extract task from container name (last part after project name)
@@ -433,17 +433,23 @@ cmd_list() {
         
         # Parse status
         if [[ "$status" == *"Up"* ]]; then
-            state="${GREEN}running${NC}"
             uptime=$(echo "$status" | sed 's/Up //')
+            # Check if agent is actively working or idle
+            agent_running=$(docker exec "$name" ps -o comm= 2>/dev/null | grep -E "^(opencode|claude|node)$" | head -1)
+            if [ -n "$agent_running" ]; then
+                state="${YELLOW}⚡ working${NC}"
+            else
+                state="${GREEN}✓ done${NC}"
+            fi
         elif [[ "$status" == *"Exited (0)"* ]]; then
-            state="${BLUE}completed${NC}"
+            state="${GREEN}✓ done${NC}"
             uptime="-"
         else
-            state="${RED}failed${NC}"
+            state="${RED}✗ failed${NC}"
             uptime="-"
         fi
         
-        printf "%-40s ${state}%-12s %-15s %s\n" "$name" "" "$uptime" "$task"
+        printf "%-40s ${state}%-5s %-15s %s\n" "$name" "" "$uptime" "$task"
     done
     
     echo ""
