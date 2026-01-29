@@ -192,6 +192,24 @@ Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.r
 | `notify [ID]`          | Test notifications or check task status      |
 | `clean`                | Remove stopped containers                    |
 
+### Custom opencode Config
+
+For project-specific MCP servers or model settings, create `ralph/opencode.json`:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "anthropic/claude-sonnet-4-20250514",
+  "mcp": {
+    "railway": {
+      "type": "local",
+      "command": ["npx", "-y", "@railway/mcp-server"],
+      "enabled": true
+    }
+  }
+}
+```
+
 ### Notifications
 
 Get notified when agents finish their work.
@@ -241,24 +259,6 @@ Popular notification services:
 - [ntfy.sh](https://ntfy.sh) - Free, self-hostable, has iOS/Android apps
 - [Pushover](https://pushover.net) - Use webhook with their API
 - Custom webhook to Slack, Discord, etc.
-
-### Custom opencode Config
-
-For project-specific MCP servers or model settings, create `ralph/opencode.json`:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-sonnet-4-20250514",
-  "mcp": {
-    "railway": {
-      "type": "local",
-      "command": ["npx", "-y", "@railway/mcp-server"],
-      "enabled": true
-    }
-  }
-}
-```
 
 ---
 

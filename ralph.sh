@@ -81,6 +81,61 @@ normalize_task_id() {
     echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g'
 }
 
+# Parse task arguments: handles bare numbers, "issue 42", "--issue 42", etc.
+# Sets: PARSED_TASK_ID (e.g., "issue-219")
+# Args: all remaining arguments
+parse_task_args() {
+    PARSED_TASK_ID=""
+    local task_type=""
+    local task_value=""
+    local collected_digits=""
+    local raw_id=""
+    
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --issue|--task|issue)
+                task_type="issue"
+                task_value="$2"
+                shift 2
+                ;;
+            --prd|prd)
+                task_type="prd"
+                task_value="$2"
+                shift 2
+                ;;
+            --prompt|prompt)
+                task_type="prompt"
+                task_value="$2"
+                shift 2
+                ;;
+            -f|--follow|--all|-a)
+                # Skip flags handled by caller
+                shift
+                ;;
+            *)
+                if [[ "$1" =~ ^[0-9]+$ ]]; then
+                    collected_digits="${collected_digits}${1}"
+                elif [ -z "$raw_id" ]; then
+                    raw_id="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    if [ -n "$task_type" ]; then
+        case "$task_type" in
+            issue) PARSED_TASK_ID="issue-$task_value" ;;
+            prd) PARSED_TASK_ID="prd-$(basename "$task_value")" ;;
+            prompt) PARSED_TASK_ID="$task_value" ;;
+        esac
+    elif [ -n "$collected_digits" ]; then
+        PARSED_TASK_ID="issue-$collected_digits"
+    elif [ -n "$raw_id" ]; then
+        PARSED_TASK_ID="$raw_id"
+    fi
+}
+
 # Get container name
 container_name() {
     local project_name="$1"
@@ -141,11 +196,11 @@ Examples:
   ralph.sh init                          # Set up ralph in current project
   ralph.sh build                         # Build project image
   ralph.sh start                         # Let Ralph choose a task
-  ralph.sh start --issue 42              # Start agent on issue
-  ralph.sh start issue 42                # Start agent using type + id
+  ralph.sh start 42                      # Start agent on issue 42 (github mode)
+  ralph.sh start 2 1 9                   # Start agent on issue 219 (digits joined)
+  ralph.sh start --issue 42              # Explicit issue flag
   ralph.sh attach issue-42               # Connect for follow-up work
-  ralph.sh attach issue 42               # Connect using type + id
-  ralph.sh attach --issue 42             # Connect using flags
+  ralph.sh attach 42                     # Connect using bare number
   ralph.sh list                          # List all containers
   ralph.sh logs -f issue-42              # Follow logs
   ralph.sh stop --all                    # Stop all containers
@@ -266,6 +321,11 @@ cmd_start() {
     local task_type=""
     local task_value=""
     local task_id=""
+    local mode_from_config
+    mode_from_config=$(jq -r '.mode // "github"' "$config_file")
+    
+    # Collect any bare numbers (for "ralph start 2 1 9" -> issue 219)
+    local collected_digits=""
     
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -307,12 +367,30 @@ cmd_start() {
                 shift 2
                 ;;
             *)
-                log_error "Unknown option: $1"
-                show_usage
-                exit 1
+                # Check if it's a number (bare issue number in github mode)
+                if [[ "$1" =~ ^[0-9]+$ ]]; then
+                    collected_digits="${collected_digits}${1}"
+                    shift
+                else
+                    log_error "Unknown option: $1"
+                    show_usage
+                    exit 1
+                fi
                 ;;
         esac
     done
+    
+    # If we collected digits and no explicit task type, treat as issue number in github mode
+    if [ -n "$collected_digits" ] && [ -z "$task_type" ]; then
+        if [ "$mode_from_config" = "github" ]; then
+            task_type="issue"
+            task_value="$collected_digits"
+            task_id="issue-$collected_digits"
+        else
+            log_error "Bare numbers only work in github mode. Use --prd or --prompt instead."
+            exit 1
+        fi
+    fi
     
     if [ -z "$task_type" ]; then
         task_id="auto-$(date +%s)"
@@ -323,9 +401,6 @@ cmd_start() {
         log_error "Image not found: $image_name. Run 'ralph.sh build' first."
         exit 1
     fi
-    
-    local mode_from_config
-    mode_from_config=$(jq -r '.mode // "github"' "$config_file")
 
     if [ "$task_type" = "issue" ] || { [ -z "$task_type" ] && [ "$mode_from_config" = "github" ]; }; then
         if [ -z "$GITHUB_TOKEN" ]; then
@@ -468,6 +543,7 @@ cmd_logs() {
     
     local follow=false
     local task_id=""
+    local collected_digits=""
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -476,15 +552,25 @@ cmd_logs() {
                 shift
                 ;;
             *)
-                task_id="$1"
+                # Collect digits for "logs 2 1 9" -> issue-219
+                if [[ "$1" =~ ^[0-9]+$ ]]; then
+                    collected_digits="${collected_digits}${1}"
+                else
+                    task_id="$1"
+                fi
                 shift
                 ;;
         esac
     done
     
+    # Bare numbers -> treat as issue number
+    if [ -n "$collected_digits" ] && [ -z "$task_id" ]; then
+        task_id="issue-$collected_digits"
+    fi
+    
     if [ -z "$task_id" ]; then
         log_error "Must specify a task ID"
-        echo "Usage: ralph.sh logs [-f] <task-id>"
+        echo "Usage: ralph.sh logs [-f] <task-id> | ralph.sh logs 42"
         exit 1
     fi
     
@@ -534,6 +620,7 @@ cmd_stop() {
     local task_id=""
     local task_type=""
     local task_value=""
+    local collected_digits=""
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -572,7 +659,10 @@ cmd_stop() {
                 shift 2
                 ;;
             *)
-                if [ -z "$task_id" ]; then
+                # Collect digits for "stop 2 1 9" -> issue-219
+                if [[ "$1" =~ ^[0-9]+$ ]]; then
+                    collected_digits="${collected_digits}${1}"
+                elif [ -z "$task_id" ]; then
                     task_id="$1"
                 fi
                 shift
@@ -586,6 +676,9 @@ cmd_stop() {
             prd) task_id="prd-$(basename "$task_value")" ;;
             prompt) task_id="$task_value" ;;
         esac
+    elif [ -n "$collected_digits" ]; then
+        # Bare numbers -> treat as issue number
+        task_id="issue-$collected_digits"
     fi
     
     if [ "$stop_all" = true ]; then
@@ -650,11 +743,12 @@ cmd_status() {
         project_name=$(get_project_name "$config_dir")
     fi
     
-    local task_id="$1"
+    parse_task_args "$@"
+    local task_id="$PARSED_TASK_ID"
     
     if [ -z "$task_id" ]; then
         log_error "Must specify a task ID"
-        echo "Usage: ralph.sh status <task-id>"
+        echo "Usage: ralph.sh status <task-id> | ralph.sh status 42"
         exit 1
     fi
     
@@ -716,11 +810,12 @@ cmd_shell() {
         project_name=$(get_project_name "$config_dir")
     fi
     
-    local task_id="$1"
+    parse_task_args "$@"
+    local task_id="$PARSED_TASK_ID"
     
     if [ -z "$task_id" ]; then
         log_error "Must specify a task ID"
-        echo "Usage: ralph.sh shell <task-id>"
+        echo "Usage: ralph.sh shell <task-id> | ralph.sh shell 42"
         exit 1
     fi
     
@@ -766,6 +861,7 @@ cmd_attach() {
     local task_id=""
     local task_type=""
     local task_value=""
+    local collected_digits=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -795,7 +891,10 @@ cmd_attach() {
                 shift 2
                 ;;
             *)
-                if [ -z "$task_id" ]; then
+                # Collect digits for "attach 2 1 9" -> issue-219
+                if [[ "$1" =~ ^[0-9]+$ ]]; then
+                    collected_digits="${collected_digits}${1}"
+                elif [ -z "$task_id" ]; then
                     task_id="$1"
                 fi
                 shift
@@ -809,11 +908,14 @@ cmd_attach() {
             prd) task_id="prd-$(basename "$task_value")" ;;
             prompt) task_id="$task_value" ;;
         esac
+    elif [ -n "$collected_digits" ]; then
+        # Bare numbers -> treat as issue number
+        task_id="issue-$collected_digits"
     fi
 
     if [ -z "$task_id" ]; then
         log_error "Must specify a task ID"
-        echo "Usage: ralph.sh attach <task-id> | ralph.sh attach --issue <number>"
+        echo "Usage: ralph.sh attach <task-id> | ralph.sh attach 42 | ralph.sh attach --issue <number>"
         exit 1
     fi
     
