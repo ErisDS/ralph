@@ -160,7 +160,7 @@ EOF
 cmd_build_base() {
     log_info "Building ralph-base image..."
     
-    docker build -t "$BASE_IMAGE_NAME" -f "$SCRIPT_DIR/docker/Dockerfile.base" "$SCRIPT_DIR/docker"
+    docker build -t "$BASE_IMAGE_NAME" -f "$SCRIPT_DIR/docker/Dockerfile.base" "$SCRIPT_DIR"
     
     log_success "Base image built: $BASE_IMAGE_NAME"
 }
