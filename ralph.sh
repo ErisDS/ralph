@@ -124,6 +124,8 @@ Commands:
   stop                 Stop container(s)
   status               Show detailed status of a container
   shell                Open interactive shell in container
+  watch                Watch containers and send macOS notifications on completion
+  notify [task]        Send a test notification (or check status of a task)
   clean                Remove all stopped containers
   init                 Initialize ralph config in current project
 
@@ -868,6 +870,126 @@ cmd_clean() {
     log_success "Cleanup complete"
 }
 
+# Send macOS notification
+notify_macos() {
+    local title="$1"
+    local message="$2"
+    local sound="${3:-Glass}"
+    
+    if command -v osascript &>/dev/null; then
+        osascript -e "display notification \"$message\" with title \"$title\" sound name \"$sound\""
+    fi
+}
+
+cmd_watch() {
+    log_info "Watching Ralph containers for completion..."
+    log_info "Press Ctrl+C to stop watching"
+    echo ""
+    
+    # Track containers we've already notified about (use temp file for compatibility)
+    local notified_file=$(mktemp)
+    trap "rm -f $notified_file" EXIT
+    
+    # Warm-up: record already-exited containers so we don't notify about them
+    docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}' | while IFS=$'\t' read -r name status; do
+        if [[ "$status" == *"Exited"* ]]; then
+            echo "$name" >> "$notified_file"
+        fi
+    done
+    
+    local running_count=$(docker ps --filter "name=${CONTAINER_PREFIX}-" -q | wc -l | tr -d ' ')
+    log_info "Watching $running_count running container(s)..."
+    echo ""
+    
+    while true; do
+        # Get all Ralph containers
+        docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}' | while IFS=$'\t' read -r name status; do
+            # Skip if we've already notified
+            if grep -qx "$name" "$notified_file" 2>/dev/null; then
+                continue
+            fi
+            
+            # Check if container just finished
+            if [[ "$status" == *"Exited"* ]]; then
+                local task="${name##*-}"
+                local project="${name#${CONTAINER_PREFIX}-}"
+                project="${project%-*}"
+                
+                if [[ "$status" == *"Exited (0)"* ]]; then
+                    log_success "Container finished: $name"
+                    notify_macos "Ralph: $project complete" "Task $task finished successfully" "Glass"
+                else
+                    log_error "Container failed: $name"
+                    notify_macos "Ralph: $project failed" "Task $task exited with error" "Basso"
+                fi
+                echo "$name" >> "$notified_file"
+            fi
+        done
+        
+        sleep 5
+    done
+}
+
+cmd_notify() {
+    # Manual notification test / send notification for a specific container
+    local task_id="$1"
+    
+    if [ -z "$task_id" ]; then
+        # Just test notification
+        notify_macos "Ralph Test" "Notifications are working!" "Glass"
+        log_success "Test notification sent"
+        return
+    fi
+    
+    # Find and check specific container
+    local config_dir
+    config_dir=$(find_ralph_config) || true
+    
+    local project_name=""
+    if [ -n "$config_dir" ]; then
+        project_name=$(get_project_name "$config_dir")
+    fi
+    
+    local cname=""
+    if [ -n "$project_name" ]; then
+        for pattern in "$task_id" "issue-$task_id"; do
+            local try_name="${CONTAINER_PREFIX}-${project_name}-${pattern}"
+            if container_exists "$try_name"; then
+                cname="$try_name"
+                break
+            fi
+        done
+    fi
+    
+    if [ -z "$cname" ]; then
+        cname=$(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}' | grep -E "(^|-)${task_id}$" | head -1)
+    fi
+    
+    if [ -z "$cname" ]; then
+        log_error "Container not found for task: $task_id"
+        exit 1
+    fi
+    
+    local status=$(docker inspect -f '{{.State.Status}}' "$cname" 2>/dev/null)
+    local exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$cname" 2>/dev/null)
+    
+    if [ "$status" = "running" ]; then
+        # Check if agent is still working
+        local agent_running=$(docker exec "$cname" ps -o comm= 2>/dev/null | grep -E "^(opencode|claude|node)$" | head -1)
+        if [ -n "$agent_running" ]; then
+            notify_macos "Ralph: $project_name" "Task $task_id is still running..."
+        else
+            notify_macos "Ralph: $project_name" "Task $task_id completed, waiting for review"
+        fi
+    elif [ "$exit_code" = "0" ]; then
+        notify_macos "Ralph: $project_name complete" "Task $task_id finished successfully" "Glass"
+    else
+        notify_macos "Ralph: $project_name failed" "Task $task_id exited with code $exit_code" "Basso"
+    fi
+    
+    log_success "Notification sent"
+}
+
 # ============================================================
 # Main
 # ============================================================
@@ -913,6 +1035,12 @@ case "$COMMAND" in
         ;;
     clean)
         cmd_clean "$@"
+        ;;
+    watch)
+        cmd_watch "$@"
+        ;;
+    notify)
+        cmd_notify "$@"
         ;;
     -h|--help|help)
         show_usage

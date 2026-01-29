@@ -188,7 +188,59 @@ Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.r
 | `stop ID`              | Stop and remove container                    |
 | `stop --all`           | Stop all containers                          |
 | `shell ID`             | Open bash in running container               |
+| `watch`                | Watch containers, send macOS notifications   |
+| `notify [ID]`          | Test notifications or check task status      |
 | `clean`                | Remove stopped containers                    |
+
+### Notifications
+
+Get notified when agents finish their work.
+
+#### macOS Desktop Notifications
+
+```bash
+# Watch all containers and get notified when they finish
+ralph.sh watch
+
+# Test that notifications work
+ralph.sh notify
+
+# Check status of a specific task (and send notification)
+ralph.sh notify issue-42
+```
+
+#### Webhooks (ntfy.sh, custom)
+
+Add notification settings to your project's `.ralph/config.json`:
+
+```json
+{
+  "notifications": {
+    "webhook": "https://your-webhook.example.com/ralph",
+    "ntfy": "https://ntfy.sh/your-topic",
+    "onSuccess": true,
+    "onFailure": true
+  }
+}
+```
+
+**Webhook format** (generic JSON POST):
+```json
+{
+  "status": "success",
+  "title": "Ralph: project done",
+  "message": "Task issue-42 completed successfully",
+  "task": "issue-42",
+  "repo": "owner/project"
+}
+```
+
+**ntfy.sh** sends with priority and tags (✅ for success, ❌ for failure).
+
+Popular notification services:
+- [ntfy.sh](https://ntfy.sh) - Free, self-hostable, has iOS/Android apps
+- [Pushover](https://pushover.net) - Use webhook with their API
+- Custom webhook to Slack, Discord, etc.
 
 ### Custom opencode Config
 

@@ -4,5 +4,11 @@
   "repo": "your-org/your-project",
   "prdFile": "./prd.json",
   "agent": "opencode",
-  "agentReview": ""
+  "agentReview": "",
+  "notifications": {
+    "webhook": "",
+    "ntfy": "",
+    "onSuccess": true,
+    "onFailure": true
+  }
 }

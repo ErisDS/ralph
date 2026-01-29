@@ -40,6 +40,12 @@ if [ -n "$REPO_RAW" ]; then
     REPO=$(normalize_repo "$REPO_RAW")
 fi
 
+# Notification settings
+NOTIFY_WEBHOOK=$(jq -r '.notifications.webhook // ""' "$CONFIG_FILE")
+NOTIFY_NTFY=$(jq -r '.notifications.ntfy // ""' "$CONFIG_FILE")
+NOTIFY_ON_SUCCESS=$(jq -r '.notifications.onSuccess // true' "$CONFIG_FILE")
+NOTIFY_ON_FAILURE=$(jq -r '.notifications.onFailure // true' "$CONFIG_FILE")
+
 MODE=${MODE:-github}
 PRD_FILE=${PRD_FILE:-./prd.json}
 COMMIT_MODE=${COMMIT_MODE:-pr}
@@ -149,6 +155,52 @@ check_dependency() {
 
 check_dependency git
 check_dependency jq
+
+# ============================================================
+# Notification Functions
+# ============================================================
+send_notification() {
+    local status="$1"    # success or failure
+    local title="$2"
+    local message="$3"
+    
+    # Check if we should send based on status
+    if [ "$status" = "success" ] && [ "$NOTIFY_ON_SUCCESS" != "true" ]; then
+        return 0
+    fi
+    if [ "$status" = "failure" ] && [ "$NOTIFY_ON_FAILURE" != "true" ]; then
+        return 0
+    fi
+    
+    # Send to custom webhook (generic JSON POST)
+    if [ -n "$NOTIFY_WEBHOOK" ]; then
+        echo "Sending webhook notification..."
+        curl -s -X POST "$NOTIFY_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d "{\"status\":\"$status\",\"title\":\"$title\",\"message\":\"$message\",\"task\":\"$TASK_ID\",\"repo\":\"$REPO\"}" \
+            || echo "Warning: Webhook notification failed"
+    fi
+    
+    # Send to ntfy.sh (or self-hosted ntfy)
+    if [ -n "$NOTIFY_NTFY" ]; then
+        echo "Sending ntfy notification..."
+        local priority="default"
+        local tags="robot"
+        if [ "$status" = "success" ]; then
+            tags="white_check_mark,robot"
+        else
+            tags="x,robot"
+            priority="high"
+        fi
+        
+        curl -s -X POST "$NOTIFY_NTFY" \
+            -H "Title: $title" \
+            -H "Priority: $priority" \
+            -H "Tags: $tags" \
+            -d "$message" \
+            || echo "Warning: ntfy notification failed"
+    fi
+}
 
 if [ "$MODE" = "github" ]; then
     check_dependency gh
@@ -476,11 +528,35 @@ PROMPT="${PROMPT//\{\{PROJECT_INSTRUCTIONS\}\}/$PROJECT_INSTRUCTIONS}"
 
 check_dependency "$AGENT_CLI"
 
+# ============================================================
+# Run Agent and Capture Result
+# ============================================================
+AGENT_EXIT_CODE=0
 case "$AGENT_CLI" in
-    opencode) opencode run "$PROMPT" ;;
-    claude)   claude "$PROMPT" ;;
+    opencode) opencode run "$PROMPT" || AGENT_EXIT_CODE=$? ;;
+    claude)   claude "$PROMPT" || AGENT_EXIT_CODE=$? ;;
     *)        echo "Error: Unknown agent '$AGENT_CLI'"; exit 1 ;;
 esac
+
+# ============================================================
+# Send Completion Notification
+# ============================================================
+PROJECT_NAME=$(basename "$REPO" 2>/dev/null || echo "project")
+TASK_DISPLAY="${TASK_ID:-auto}"
+
+if [ "$AGENT_EXIT_CODE" -eq 0 ]; then
+    echo ""
+    echo "Agent completed successfully"
+    send_notification "success" \
+        "Ralph: $PROJECT_NAME done" \
+        "Task $TASK_DISPLAY completed successfully"
+else
+    echo ""
+    echo "Agent exited with code $AGENT_EXIT_CODE"
+    send_notification "failure" \
+        "Ralph: $PROJECT_NAME failed" \
+        "Task $TASK_DISPLAY failed (exit code $AGENT_EXIT_CODE)"
+fi
 
 # ============================================================
 # Keep Container Alive for Interactive Follow-up
