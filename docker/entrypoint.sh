@@ -234,14 +234,14 @@ fi
 echo "Setting up opencode configuration..."
 mkdir -p "$HOME/.config/opencode"
 
+# Copy host's global opencode config (opencode will merge with project's opencode.json)
 HOST_OPENCODE_DIR="/home/ralph/.config/opencode-host"
 if [ -d "$HOST_OPENCODE_DIR" ]; then
     cp -R "$HOST_OPENCODE_DIR"/. "$HOME/.config/opencode/" || true
 fi
 
-if [ -f "/ralph/opencode.json" ]; then
-    cp /ralph/opencode.json "$HOME/.config/opencode/opencode.json"
-else
+# If no global config exists, create a minimal default
+if [ ! -f "$HOME/.config/opencode/opencode.json" ]; then
     cat > "$HOME/.config/opencode/opencode.json" << EOF
 {
   "\$schema": "https://opencode.ai/config.json",

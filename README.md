@@ -113,8 +113,8 @@ your-project/
 │   └── config.json      # Shared config (ralph-once + Docker)
 ├── ralph/
 │   ├── Dockerfile       # Extends ralph-base
-│   ├── prompt.md        # Optional: project instructions to append
-│   └── opencode.json    # Optional: opencode config (MCP servers, etc.)
+│   └── prompt.md        # Optional: project instructions to append
+├── opencode.json        # Optional: project opencode config (MCP servers, etc.)
 └── ...
 ```
 
@@ -124,8 +124,9 @@ Run `ralph.sh init` to create this from templates.
 
 - Base image includes the `claude` CLI.
 - `ralph.sh` mounts host Claude settings when present (`~/.claude`, `~/.config/claude`, `~/.config/anthropic`).
-- `ralph.sh` also mounts host opencode settings (`~/.config/opencode`) and copies them into the container config.
-- Set `"agent": "claude"` in `.ralph/config.json` to use it.
+- `ralph.sh` mounts host opencode settings (`~/.config/opencode`) as global config.
+- Opencode automatically merges global config with project's `opencode.json` if present.
+- Set `"agent": "claude"` in `.ralph/config.json` to use Claude instead of opencode.
 
 ### Configuration (`.ralph/config.json`)
 
@@ -194,7 +195,7 @@ Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.r
 
 ### Custom opencode Config
 
-For project-specific MCP servers or model settings, create `ralph/opencode.json`:
+For project-specific MCP servers or model settings, create `opencode.json` in your project root:
 
 ```json
 {
@@ -209,6 +210,8 @@ For project-specific MCP servers or model settings, create `ralph/opencode.json`
   }
 }
 ```
+
+Opencode automatically merges your global `~/.config/opencode/` settings with the project's `opencode.json`.
 
 ### Notifications
 
