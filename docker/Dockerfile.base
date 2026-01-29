@@ -32,9 +32,11 @@ RUN npm install -g opencode-ai @anthropic-ai/claude-code
 # Create non-root user (opencode refuses to run as root with dangerous permissions)
 RUN useradd -m -s /bin/bash ralph
 
-# Pre-create opencode state directories for ralph
+# Pre-create state and config directories for ralph
 RUN mkdir -p /home/ralph/.local/share/opencode /home/ralph/.local/state \
-    && chown -R ralph:ralph /home/ralph/.local
+    /home/ralph/.config/opencode /home/ralph/.config/claude /home/ralph/.config/anthropic \
+    /home/ralph/.claude \
+    && chown -R ralph:ralph /home/ralph/.local /home/ralph/.config /home/ralph/.claude
 
 # Configure git defaults for ralph user
 USER ralph
