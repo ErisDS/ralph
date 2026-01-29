@@ -990,17 +990,29 @@ cmd_watch() {
     
     # Track containers we've already notified about (use temp file for compatibility)
     local notified_file=$(mktemp)
-    trap "rm -f $notified_file" EXIT
+    # Track which containers had agent running (to detect transition to done)
+    local working_file=$(mktemp)
+    trap "rm -f $notified_file $working_file" EXIT
     
-    # Warm-up: record already-exited containers so we don't notify about them
+    # Warm-up: record already-exited containers and already-done containers
     docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}' | while IFS=$'\t' read -r name status; do
         if [[ "$status" == *"Exited"* ]]; then
             echo "$name" >> "$notified_file"
+        elif [[ "$status" == *"Up"* ]]; then
+            # Check if agent is currently running
+            local agent_running=$(docker exec "$name" ps -o comm= 2>/dev/null | grep -E "^(opencode|claude|node)$" | head -1)
+            if [ -n "$agent_running" ]; then
+                echo "$name" >> "$working_file"
+            else
+                # Agent already done, don't notify
+                echo "$name" >> "$notified_file"
+            fi
         fi
     done
     
     local running_count=$(docker ps --filter "name=${CONTAINER_PREFIX}-" -q | wc -l | tr -d ' ')
-    log_info "Watching $running_count running container(s)..."
+    local working_count=$(wc -l < "$working_file" 2>/dev/null | tr -d ' ')
+    log_info "Watching $running_count container(s), $working_count with active agent(s)..."
     echo ""
     
     while true; do
@@ -1011,12 +1023,12 @@ cmd_watch() {
                 continue
             fi
             
-            # Check if container just finished
+            local task="${name##*-}"
+            local project="${name#${CONTAINER_PREFIX}-}"
+            project="${project%-*}"
+            
+            # Check if container exited
             if [[ "$status" == *"Exited"* ]]; then
-                local task="${name##*-}"
-                local project="${name#${CONTAINER_PREFIX}-}"
-                project="${project%-*}"
-                
                 if [[ "$status" == *"Exited (0)"* ]]; then
                     log_success "Container finished: $name"
                     notify_macos "Ralph: $project complete" "Task $task finished successfully" "Glass"
@@ -1025,6 +1037,24 @@ cmd_watch() {
                     notify_macos "Ralph: $project failed" "Task $task exited with error" "Basso"
                 fi
                 echo "$name" >> "$notified_file"
+            elif [[ "$status" == *"Up"* ]]; then
+                # Container is up - check if agent is still running
+                local agent_running=$(docker exec "$name" ps -o comm= 2>/dev/null | grep -E "^(opencode|claude|node)$" | head -1)
+                
+                if [ -n "$agent_running" ]; then
+                    # Agent is running - mark as working if not already
+                    if ! grep -qx "$name" "$working_file" 2>/dev/null; then
+                        echo "$name" >> "$working_file"
+                        log_info "Agent started: $name"
+                    fi
+                else
+                    # Agent not running - check if it was working before (transition to done)
+                    if grep -qx "$name" "$working_file" 2>/dev/null; then
+                        log_success "Agent finished: $name"
+                        notify_macos "Ralph: $project complete" "Task $task finished successfully" "Glass"
+                        echo "$name" >> "$notified_file"
+                    fi
+                fi
             fi
         done
         
