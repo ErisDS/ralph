@@ -501,10 +501,48 @@ cmd_start() {
     echo "Stop:          ralph.sh stop $task_id"
 }
 
+# Format seconds into human readable time (e.g., "5m", "1h 23m", "2d 5h")
+format_duration() {
+    local seconds=$1
+    if [ "$seconds" -lt 60 ]; then
+        echo "${seconds}s"
+    elif [ "$seconds" -lt 3600 ]; then
+        echo "$((seconds / 60))m"
+    elif [ "$seconds" -lt 86400 ]; then
+        local hours=$((seconds / 3600))
+        local mins=$(((seconds % 3600) / 60))
+        if [ "$mins" -gt 0 ]; then
+            echo "${hours}h ${mins}m"
+        else
+            echo "${hours}h"
+        fi
+    else
+        local days=$((seconds / 86400))
+        local hours=$(((seconds % 86400) / 3600))
+        echo "${days}d ${hours}h"
+    fi
+}
+
+# Get time since last log output in seconds
+get_idle_seconds() {
+    local container=$1
+    local last_log_time=$(docker logs --timestamps "$container" 2>&1 | tail -1 | cut -d' ' -f1 | sed 's/Z$//')
+    if [ -n "$last_log_time" ] && [ "$last_log_time" != "" ]; then
+        # Convert ISO timestamp to epoch
+        local last_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${last_log_time%%.*}" "+%s" 2>/dev/null || echo "")
+        if [ -n "$last_epoch" ]; then
+            local now_epoch=$(date "+%s")
+            echo $((now_epoch - last_epoch))
+            return
+        fi
+    fi
+    echo "0"
+}
+
 cmd_list() {
     echo ""
-    printf "%-15s %-12s %-12s %-8s %s\n" "PROJECT" "STATUS" "UPTIME" "TASK" "FOLDER"
-    printf "%-15s %-12s %-12s %-8s %s\n" "───────────────" "────────────" "────────────" "────────" "──────────────────────────────"
+    printf "%-12s %-12s %-10s %-10s %-6s %s\n" "PROJECT" "STATUS" "RUNNING" "IDLE" "TASK" "FOLDER"
+    printf "%-12s %-12s %-10s %-10s %-6s %s\n" "────────────" "────────────" "──────────" "──────────" "──────" "────────────────"
     
     docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}' | while IFS=$'\t' read -r name status; do
         # Extract task from container name (last part after project name)
@@ -513,7 +551,6 @@ cmd_list() {
         # Get project from label, or extract from image name
         local project=$(docker inspect "$name" --format '{{index .Config.Labels "ralph.project"}}' 2>/dev/null)
         if [ -z "$project" ] || [ "$project" = "<no value>" ]; then
-            # Fallback: get from image name (ralph-projectname -> projectname)
             project=$(docker inspect "$name" --format '{{.Config.Image}}' 2>/dev/null | sed 's/^ralph-//')
         fi
         
@@ -525,25 +562,37 @@ cmd_list() {
             folder=$(basename "$folder")
         fi
         
+        local idle_time="-"
+        local uptime="-"
+        
         # Parse status
         if [[ "$status" == *"Up"* ]]; then
-            uptime=$(echo "$status" | sed 's/Up //')
-            # Check if agent is actively working or idle
+            uptime=$(echo "$status" | sed 's/Up //' | sed 's/ (.*)//')
+            
+            # Check if agent process is running
             agent_running=$(docker exec "$name" ps -o comm= 2>/dev/null | grep -E "^(opencode|claude|node)$" | head -1)
+            
             if [ -n "$agent_running" ]; then
-                state="${YELLOW}⚡ working${NC}"
+                # Agent process exists - check how long since last output
+                local idle_secs=$(get_idle_seconds "$name")
+                idle_time=$(format_duration "$idle_secs")
+                
+                # If idle for more than 2 minutes, show as idle (likely waiting for input)
+                if [ "$idle_secs" -gt 120 ]; then
+                    state="${BLUE}⏸ idle${NC}"
+                else
+                    state="${YELLOW}⚡ working${NC}"
+                fi
             else
                 state="${GREEN}✓ done${NC}"
             fi
         elif [[ "$status" == *"Exited (0)"* ]]; then
             state="${GREEN}✓ done${NC}"
-            uptime="-"
         else
             state="${RED}✗ failed${NC}"
-            uptime="-"
         fi
         
-        printf "%-15s ${state}%-2s %-12s %-8s %s\n" "$project" "" "$uptime" "$task" "$folder"
+        printf "%-12s ${state}%-2s %-10s %-10s %-6s %s\n" "$project" "" "$uptime" "$idle_time" "$task" "$folder"
     done
     
     echo ""
@@ -1034,8 +1083,8 @@ cmd_watch() {
         echo -e "${BLUE}Ralph Watch${NC} - Live container status (Ctrl+C to exit)"
         echo -e "Updated: $(date '+%H:%M:%S')"
         echo ""
-        printf "%-15s %-12s %-12s %-8s %s\n" "PROJECT" "STATUS" "UPTIME" "TASK" "FOLDER"
-        printf "%-15s %-12s %-12s %-8s %s\n" "───────────────" "────────────" "────────────" "────────" "──────────────────────────────"
+        printf "%-12s %-12s %-10s %-10s %-6s %s\n" "PROJECT" "STATUS" "RUNNING" "IDLE" "TASK" "FOLDER"
+        printf "%-12s %-12s %-10s %-10s %-6s %s\n" "────────────" "────────────" "──────────" "──────────" "──────" "────────────────"
         
         # Get all Ralph containers and display + check for notifications
         local container_count=0
@@ -1058,13 +1107,26 @@ cmd_watch() {
                 folder=$(basename "$folder")
             fi
             
+            local idle_time="-"
+            local uptime="-"
+            
             # Parse status for display
             if [[ "$status" == *"Up"* ]]; then
-                uptime=$(echo "$status" | sed 's/Up //')
+                uptime=$(echo "$status" | sed 's/Up //' | sed 's/ (.*)//')
                 local agent_running=$(docker exec "$name" ps -o comm= 2>/dev/null | grep -E "^(opencode|claude|node)$" | head -1)
                 
                 if [ -n "$agent_running" ]; then
-                    state="${YELLOW}⚡ working${NC}"
+                    # Agent process exists - check how long since last output
+                    local idle_secs=$(get_idle_seconds "$name")
+                    idle_time=$(format_duration "$idle_secs")
+                    
+                    # If idle for more than 2 minutes, show as idle (likely waiting for input)
+                    if [ "$idle_secs" -gt 120 ]; then
+                        state="${BLUE}⏸ idle${NC}"
+                    else
+                        state="${YELLOW}⚡ working${NC}"
+                    fi
+                    
                     # Mark as working if not already
                     if ! grep -qx "$name" "$working_file" 2>/dev/null; then
                         echo "$name" >> "$working_file"
@@ -1079,7 +1141,6 @@ cmd_watch() {
                 fi
             elif [[ "$status" == *"Exited (0)"* ]]; then
                 state="${GREEN}✓ done${NC}"
-                uptime="-"
                 # Notify if not already
                 if ! grep -qx "$name" "$notified_file" 2>/dev/null; then
                     if grep -qx "$name" "$working_file" 2>/dev/null; then
@@ -1089,7 +1150,6 @@ cmd_watch() {
                 fi
             else
                 state="${RED}✗ failed${NC}"
-                uptime="-"
                 # Notify if not already
                 if ! grep -qx "$name" "$notified_file" 2>/dev/null; then
                     notify_macos "Ralph: $project failed" "Task $task exited with error" "Basso"
@@ -1097,7 +1157,7 @@ cmd_watch() {
                 fi
             fi
             
-            printf "%-15s ${state}%-2s %-12s %-8s %s\n" "$project" "" "$uptime" "$task" "$folder"
+            printf "%-12s ${state}%-2s %-10s %-10s %-6s %s\n" "$project" "" "$uptime" "$idle_time" "$task" "$folder"
         done < <(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}')
         
         if [ "$container_count" -eq 0 ]; then
