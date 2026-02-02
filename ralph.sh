@@ -984,80 +984,98 @@ notify_macos() {
 }
 
 cmd_watch() {
-    log_info "Watching Ralph containers for completion..."
-    log_info "Press Ctrl+C to stop watching"
-    echo ""
-    
     # Track containers we've already notified about (use temp file for compatibility)
     local notified_file=$(mktemp)
     # Track which containers had agent running (to detect transition to done)
     local working_file=$(mktemp)
-    trap "rm -f $notified_file $working_file" EXIT
+    trap "rm -f $notified_file $working_file; tput cnorm 2>/dev/null" EXIT
+    
+    # Hide cursor for cleaner display
+    tput civis 2>/dev/null || true
     
     # Warm-up: record already-exited containers and already-done containers
     docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}' | while IFS=$'\t' read -r name status; do
         if [[ "$status" == *"Exited"* ]]; then
             echo "$name" >> "$notified_file"
         elif [[ "$status" == *"Up"* ]]; then
-            # Check if agent is currently running
             local agent_running=$(docker exec "$name" ps -o comm= 2>/dev/null | grep -E "^(opencode|claude|node)$" | head -1)
             if [ -n "$agent_running" ]; then
                 echo "$name" >> "$working_file"
             else
-                # Agent already done, don't notify
                 echo "$name" >> "$notified_file"
             fi
         fi
     done
     
-    local running_count=$(docker ps --filter "name=${CONTAINER_PREFIX}-" -q | wc -l | tr -d ' ')
-    local working_count=$(wc -l < "$working_file" 2>/dev/null | tr -d ' ')
-    log_info "Watching $running_count container(s), $working_count with active agent(s)..."
-    echo ""
-    
     while true; do
-        # Get all Ralph containers
-        docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}' | while IFS=$'\t' read -r name status; do
-            # Skip if we've already notified
-            if grep -qx "$name" "$notified_file" 2>/dev/null; then
-                continue
-            fi
-            
+        # Move cursor to top and clear screen
+        tput home 2>/dev/null || clear
+        tput ed 2>/dev/null || true
+        
+        # Header
+        echo ""
+        echo -e "${BLUE}Ralph Watch${NC} - Live container status (Ctrl+C to exit)"
+        echo -e "Updated: $(date '+%H:%M:%S')"
+        echo ""
+        printf "%-40s %-15s %-15s %s\n" "CONTAINER" "STATUS" "UPTIME" "TASK"
+        printf "%-40s %-15s %-15s %s\n" "────────────────────────────────────────" "───────────────" "───────────────" "────────────────────"
+        
+        # Get all Ralph containers and display + check for notifications
+        local container_count=0
+        while IFS=$'\t' read -r name status; do
+            [ -z "$name" ] && continue
+            container_count=$((container_count + 1))
             local task="${name##*-}"
             local project="${name#${CONTAINER_PREFIX}-}"
             project="${project%-*}"
             
-            # Check if container exited
-            if [[ "$status" == *"Exited"* ]]; then
-                if [[ "$status" == *"Exited (0)"* ]]; then
-                    log_success "Container finished: $name"
-                    notify_macos "Ralph: $project complete" "Task $task finished successfully" "Glass"
-                else
-                    log_error "Container failed: $name"
-                    notify_macos "Ralph: $project failed" "Task $task exited with error" "Basso"
-                fi
-                echo "$name" >> "$notified_file"
-            elif [[ "$status" == *"Up"* ]]; then
-                # Container is up - check if agent is still running
+            # Parse status for display
+            if [[ "$status" == *"Up"* ]]; then
+                uptime=$(echo "$status" | sed 's/Up //')
                 local agent_running=$(docker exec "$name" ps -o comm= 2>/dev/null | grep -E "^(opencode|claude|node)$" | head -1)
                 
                 if [ -n "$agent_running" ]; then
-                    # Agent is running - mark as working if not already
+                    state="${YELLOW}⚡ working${NC}"
+                    # Mark as working if not already
                     if ! grep -qx "$name" "$working_file" 2>/dev/null; then
                         echo "$name" >> "$working_file"
-                        log_info "Agent started: $name"
                     fi
                 else
-                    # Agent not running - check if it was working before (transition to done)
-                    if grep -qx "$name" "$working_file" 2>/dev/null; then
-                        log_success "Agent finished: $name"
+                    state="${GREEN}✓ done${NC}"
+                    # Check if it transitioned from working to done
+                    if grep -qx "$name" "$working_file" 2>/dev/null && ! grep -qx "$name" "$notified_file" 2>/dev/null; then
                         notify_macos "Ralph: $project complete" "Task $task finished successfully" "Glass"
                         echo "$name" >> "$notified_file"
                     fi
                 fi
+            elif [[ "$status" == *"Exited (0)"* ]]; then
+                state="${GREEN}✓ done${NC}"
+                uptime="-"
+                # Notify if not already
+                if ! grep -qx "$name" "$notified_file" 2>/dev/null; then
+                    if grep -qx "$name" "$working_file" 2>/dev/null; then
+                        notify_macos "Ralph: $project complete" "Task $task finished successfully" "Glass"
+                    fi
+                    echo "$name" >> "$notified_file"
+                fi
+            else
+                state="${RED}✗ failed${NC}"
+                uptime="-"
+                # Notify if not already
+                if ! grep -qx "$name" "$notified_file" 2>/dev/null; then
+                    notify_macos "Ralph: $project failed" "Task $task exited with error" "Basso"
+                    echo "$name" >> "$notified_file"
+                fi
             fi
-        done
+            
+            printf "%-40s ${state}%-5s %-15s %s\n" "$name" "" "$uptime" "$task"
+        done < <(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}')
         
+        if [ "$container_count" -eq 0 ]; then
+            echo -e "  ${YELLOW}No Ralph containers running${NC}"
+        fi
+        
+        echo ""
         sleep 5
     done
 }
