@@ -439,6 +439,8 @@ cmd_start() {
         --memory="$memory"
         -e "GITHUB_TOKEN=$GITHUB_TOKEN"
         -e "RALPH_TASK_ID=$task_id"
+        --label "ralph.project=$project_name"
+        --label "ralph.folder=$project_root"
     )
 
     if [ -d "$project_root/.ralph" ]; then
@@ -501,12 +503,27 @@ cmd_start() {
 
 cmd_list() {
     echo ""
-    printf "%-40s %-15s %-15s %s\n" "CONTAINER" "STATUS" "UPTIME" "TASK"
-    printf "%-40s %-15s %-15s %s\n" "────────────────────────────────────────" "───────────────" "───────────────" "────────────────────"
+    printf "%-15s %-12s %-12s %-8s %s\n" "PROJECT" "STATUS" "UPTIME" "TASK" "FOLDER"
+    printf "%-15s %-12s %-12s %-8s %s\n" "───────────────" "────────────" "────────────" "────────" "──────────────────────────────"
     
     docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}' | while IFS=$'\t' read -r name status; do
         # Extract task from container name (last part after project name)
         task="${name##*-}"
+        
+        # Get project from label, or extract from image name
+        local project=$(docker inspect "$name" --format '{{index .Config.Labels "ralph.project"}}' 2>/dev/null)
+        if [ -z "$project" ] || [ "$project" = "<no value>" ]; then
+            # Fallback: get from image name (ralph-projectname -> projectname)
+            project=$(docker inspect "$name" --format '{{.Config.Image}}' 2>/dev/null | sed 's/^ralph-//')
+        fi
+        
+        # Get folder from label (if available)
+        local folder=$(docker inspect "$name" --format '{{index .Config.Labels "ralph.folder"}}' 2>/dev/null)
+        if [ -z "$folder" ] || [ "$folder" = "<no value>" ]; then
+            folder="-"
+        else
+            folder=$(basename "$folder")
+        fi
         
         # Parse status
         if [[ "$status" == *"Up"* ]]; then
@@ -526,7 +543,7 @@ cmd_list() {
             uptime="-"
         fi
         
-        printf "%-40s ${state}%-5s %-15s %s\n" "$name" "" "$uptime" "$task"
+        printf "%-15s ${state}%-2s %-12s %-8s %s\n" "$project" "" "$uptime" "$task" "$folder"
     done
     
     echo ""
@@ -1017,8 +1034,8 @@ cmd_watch() {
         echo -e "${BLUE}Ralph Watch${NC} - Live container status (Ctrl+C to exit)"
         echo -e "Updated: $(date '+%H:%M:%S')"
         echo ""
-        printf "%-40s %-15s %-15s %s\n" "CONTAINER" "STATUS" "UPTIME" "TASK"
-        printf "%-40s %-15s %-15s %s\n" "────────────────────────────────────────" "───────────────" "───────────────" "────────────────────"
+        printf "%-15s %-12s %-12s %-8s %s\n" "PROJECT" "STATUS" "UPTIME" "TASK" "FOLDER"
+        printf "%-15s %-12s %-12s %-8s %s\n" "───────────────" "────────────" "────────────" "────────" "──────────────────────────────"
         
         # Get all Ralph containers and display + check for notifications
         local container_count=0
@@ -1026,8 +1043,20 @@ cmd_watch() {
             [ -z "$name" ] && continue
             container_count=$((container_count + 1))
             local task="${name##*-}"
-            local project="${name#${CONTAINER_PREFIX}-}"
-            project="${project%-*}"
+            
+            # Get project from label, or extract from image name
+            local project=$(docker inspect "$name" --format '{{index .Config.Labels "ralph.project"}}' 2>/dev/null)
+            if [ -z "$project" ] || [ "$project" = "<no value>" ]; then
+                project=$(docker inspect "$name" --format '{{.Config.Image}}' 2>/dev/null | sed 's/^ralph-//')
+            fi
+            
+            # Get folder from label (if available)
+            local folder=$(docker inspect "$name" --format '{{index .Config.Labels "ralph.folder"}}' 2>/dev/null)
+            if [ -z "$folder" ] || [ "$folder" = "<no value>" ]; then
+                folder="-"
+            else
+                folder=$(basename "$folder")
+            fi
             
             # Parse status for display
             if [[ "$status" == *"Up"* ]]; then
@@ -1068,7 +1097,7 @@ cmd_watch() {
                 fi
             fi
             
-            printf "%-40s ${state}%-5s %-15s %s\n" "$name" "" "$uptime" "$task"
+            printf "%-15s ${state}%-2s %-12s %-8s %s\n" "$project" "" "$uptime" "$task" "$folder"
         done < <(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}\t{{.Status}}')
         
         if [ "$container_count" -eq 0 ]; then
