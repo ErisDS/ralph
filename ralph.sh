@@ -628,11 +628,9 @@ cmd_start() {
     # Mount Docker socket if it exists (for pnpm dx, docker compose, etc.)
     if [ -S /var/run/docker.sock ]; then
         docker_args+=(-v "/var/run/docker.sock:/var/run/docker.sock")
-        # Add docker group so ralph user can access the socket
-        local docker_gid=$(stat -f '%g' /var/run/docker.sock 2>/dev/null || stat -c '%g' /var/run/docker.sock 2>/dev/null)
-        if [ -n "$docker_gid" ]; then
-            docker_args+=(--group-add "$docker_gid")
-        fi
+        # Run as root to access Docker socket (socket permissions don't transfer well)
+        # The agent tools (opencode/claude) handle their own security
+        docker_args+=(--user root)
     fi
     
     # Add ANTHROPIC_API_KEY if set
