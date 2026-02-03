@@ -173,9 +173,11 @@ Commands:
   build-base           Build the ralph-base Docker image
   build                Build project-specific image (run from project dir)
   start                Start a new agent container
+  restart              Stop and restart a container with same task
   attach               Connect to agent for follow-up instructions
   list                 List all Ralph containers
   logs                 View container logs
+  tail                 Follow container logs (shorthand for logs -f)
   stop                 Stop container(s)
   status               Show detailed status of a container
   shell                Open interactive shell in container
@@ -202,7 +204,8 @@ Examples:
   ralph.sh attach issue-42               # Connect for follow-up work
   ralph.sh attach 42                     # Connect using bare number
   ralph.sh list                          # List all containers
-  ralph.sh logs -f issue-42              # Follow logs
+  ralph.sh tail 42                       # Follow logs for issue 42
+  ralph.sh restart 42                    # Stop and restart issue 42
   ralph.sh stop --all                    # Stop all containers
 
 Environment Variables:
@@ -701,6 +704,137 @@ cmd_logs() {
     else
         docker logs "$cname"
     fi
+}
+
+cmd_tail() {
+    # Shorthand for logs -f
+    local config_dir
+    config_dir=$(find_ralph_config) || true
+    
+    local project_name=""
+    if [ -n "$config_dir" ]; then
+        project_name=$(get_project_name "$config_dir")
+    fi
+    
+    parse_task_args "$@"
+    local task_id="$PARSED_TASK_ID"
+    
+    if [ -z "$task_id" ]; then
+        log_error "Must specify a task ID"
+        echo "Usage: ralph.sh tail <task-id> | ralph.sh tail 42"
+        exit 1
+    fi
+    
+    # Find container
+    local cname=""
+    if [ -n "$project_name" ]; then
+        for pattern in "$task_id" "issue-$task_id"; do
+            local try_name="${CONTAINER_PREFIX}-${project_name}-${pattern}"
+            if container_exists "$try_name"; then
+                cname="$try_name"
+                break
+            fi
+        done
+    fi
+    
+    if [ -z "$cname" ]; then
+        cname=$(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}' | grep -E "(^|-)${task_id}$" | head -1)
+    fi
+    
+    if [ -z "$cname" ]; then
+        log_error "Container not found for task: $task_id"
+        log_info "Available containers:"
+        docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '  {{.Names}}'
+        exit 1
+    fi
+    
+    docker logs -f "$cname"
+}
+
+cmd_restart() {
+    # Restart a container with the same task
+    local config_dir
+    config_dir=$(find_ralph_config) || true
+    
+    local project_name=""
+    local project_root=""
+    if [ -n "$config_dir" ]; then
+        project_name=$(get_project_name "$config_dir")
+        project_root="$config_dir"
+    fi
+    
+    parse_task_args "$@"
+    local task_id="$PARSED_TASK_ID"
+    
+    if [ -z "$task_id" ]; then
+        log_error "Must specify a task ID"
+        echo "Usage: ralph restart <task-id> | ralph restart 42"
+        exit 1
+    fi
+    
+    # Find container
+    local cname=""
+    if [ -n "$project_name" ]; then
+        for pattern in "$task_id" "issue-$task_id"; do
+            local try_name="${CONTAINER_PREFIX}-${project_name}-${pattern}"
+            if container_exists "$try_name"; then
+                cname="$try_name"
+                break
+            fi
+        done
+    fi
+    
+    if [ -z "$cname" ]; then
+        cname=$(docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '{{.Names}}' | grep -E "(^|-)${task_id}$" | head -1)
+    fi
+    
+    if [ -z "$cname" ]; then
+        log_error "Container not found for task: $task_id"
+        log_info "Available containers:"
+        docker ps -a --filter "name=${CONTAINER_PREFIX}-" --format '  {{.Names}}'
+        exit 1
+    fi
+    
+    # Extract task info from container name
+    # Container name format: ralph-<project>-<task_id>
+    local container_task_id
+    container_task_id=$(echo "$cname" | sed "s/^${CONTAINER_PREFIX}-${project_name}-//")
+    
+    # Get folder from label (for running from different directory)
+    local container_folder
+    container_folder=$(docker inspect -f '{{index .Config.Labels "ralph.folder"}}' "$cname" 2>/dev/null || echo "")
+    
+    if [ -n "$container_folder" ] && [ -d "$container_folder" ]; then
+        project_root="$container_folder"
+    fi
+    
+    log_info "Stopping container: $cname"
+    docker stop "$cname" 2>/dev/null || true
+    docker rm "$cname" 2>/dev/null || true
+    
+    # Determine task type and value from task_id
+    local task_type=""
+    local task_value=""
+    if [[ "$container_task_id" =~ ^issue-(.+)$ ]]; then
+        task_type="issue"
+        task_value="${BASH_REMATCH[1]}"
+    elif [[ "$container_task_id" =~ ^prd-(.+)$ ]]; then
+        task_type="prd"
+        task_value="${BASH_REMATCH[1]}"
+    else
+        task_type="prompt"
+        task_value="$container_task_id"
+    fi
+    
+    log_info "Restarting task: $task_type $task_value"
+    
+    # Change to project directory and start
+    if [ -n "$project_root" ] && [ -d "$project_root" ]; then
+        cd "$project_root"
+    fi
+    
+    # Re-run start command
+    cmd_start "--$task_type" "$task_value"
 }
 
 cmd_stop() {
@@ -1293,6 +1427,12 @@ case "$COMMAND" in
         ;;
     logs)
         cmd_logs "$@"
+        ;;
+    tail)
+        cmd_tail "$@"
+        ;;
+    restart)
+        cmd_restart "$@"
         ;;
     stop)
         cmd_stop "$@"
