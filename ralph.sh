@@ -625,6 +625,16 @@ cmd_start() {
         docker_args+=(-v "$project_root/.env:/workspace/.env:ro")
     fi
     
+    # Mount Docker socket if it exists (for pnpm dx, docker compose, etc.)
+    if [ -S /var/run/docker.sock ]; then
+        docker_args+=(-v "/var/run/docker.sock:/var/run/docker.sock")
+        # Add docker group so ralph user can access the socket
+        local docker_gid=$(stat -f '%g' /var/run/docker.sock 2>/dev/null || stat -c '%g' /var/run/docker.sock 2>/dev/null)
+        if [ -n "$docker_gid" ]; then
+            docker_args+=(--group-add "$docker_gid")
+        fi
+    fi
+    
     # Add ANTHROPIC_API_KEY if set
     if [ -n "$ANTHROPIC_API_KEY" ]; then
         docker_args+=(-e "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
