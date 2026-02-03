@@ -181,17 +181,30 @@ Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.r
 | `build`                | Build project-specific image                 |
 | `start`                | Start agent using config.json task selection |
 | `start --issue N`      | Start agent on a specific GitHub issue       |
+| `start 42`             | Start agent on issue 42 (bare number, github mode) |
 | `start --prd <file>`   | Start agent in PRD mode with given file      |
 | `start --prompt "..."` | Start agent with custom prompt               |
-| `list`                 | List all Ralph containers                    |
+| `list`                 | List all Ralph containers with status        |
 | `logs [-f] ID`         | View container logs                          |
+| `tail ID`              | Follow logs (shorthand for `logs -f`)        |
 | `status ID`            | Show detailed container status               |
+| `restart ID`           | Stop and restart container with same task    |
 | `stop ID`              | Stop and remove container                    |
 | `stop --all`           | Stop all containers                          |
+| `attach ID`            | Connect to agent for follow-up instructions  |
 | `shell ID`             | Open bash in running container               |
 | `watch`                | Watch containers, send macOS notifications   |
 | `notify [ID]`          | Test notifications or check task status      |
 | `clean`                | Remove stopped containers                    |
+
+**Bare number support**: In GitHub mode, you can use bare numbers for task IDs:
+```bash
+ralph.sh start 42        # Starts issue-42
+ralph.sh tail 42         # Follow logs for issue-42  
+ralph.sh restart 42      # Restart issue-42
+ralph.sh attach 42       # Attach to issue-42
+ralph.sh stop 42         # Stop issue-42
+```
 
 ### Custom opencode Config
 
@@ -212,6 +225,24 @@ For project-specific MCP servers or model settings, create `opencode.json` in yo
 ```
 
 Opencode automatically merges your global `~/.config/opencode/` settings with the project's `opencode.json`.
+
+### Container Status
+
+The `list` and `watch` commands show container status with these indicators:
+
+| Status | Meaning |
+| ------ | ------- |
+| `⚡ working` | Agent is actively producing output |
+| `⏸ waiting` | Agent is waiting for input (detected prompt like `[Y/n]`) |
+| `⏸ idle` | No output for >2 minutes, may need attention |
+| `✓ done` | Agent finished successfully |
+| `✗ failed` | Agent exited with an error |
+
+The table also shows:
+- **PROJECT** - Which project the container belongs to
+- **FOLDER** - Local path to the project
+- **RUNNING** - Total container uptime
+- **IDLE** - Time since last output
 
 ### Notifications
 
