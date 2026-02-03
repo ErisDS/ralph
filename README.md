@@ -89,13 +89,11 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 # 2. Build base image (one time)
 ./ralph.sh build-base
 
-# 3. Initialize ralph in your project
+# 3. Initialize ralph in your project (interactive wizard)
 cd ~/your-project
 ~/path/to/ralph/ralph.sh init
 
-# 4. Edit .ralph/config.json with your project details
-
-# 5. Build project image
+# 4. Build project image
 ~/path/to/ralph/ralph.sh build
 
 # 6. Start agents
@@ -177,7 +175,8 @@ Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.r
 | Command                | Description                                  |
 | ---------------------- | -------------------------------------------- |
 | `build-base`           | Build the ralph-base Docker image (one time) |
-| `init`                 | Initialize ralph config in current project   |
+| `init`                 | Interactive setup wizard for new projects     |
+| `init --force`         | Re-run setup, overwrite existing config       |
 | `build`                | Build project-specific image                 |
 | `start`                | Start agent using config.json task selection |
 | `start --issue N`      | Start agent on a specific GitHub issue       |

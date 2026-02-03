@@ -184,7 +184,7 @@ Commands:
   watch                Watch containers and send macOS notifications on completion
   notify [task]        Send a test notification (or check status of a task)
   clean                Remove all stopped containers
-  init                 Initialize ralph config in current project
+  init [--force]       Initialize ralph config (interactive setup)
 
 Start Options:
   --issue <number>     Work on a specific GitHub issue
@@ -195,7 +195,8 @@ Start Options:
 
 Examples:
   ralph.sh build-base                    # Build base image (one time)
-  ralph.sh init                          # Set up ralph in current project
+  ralph.sh init                          # Interactive setup wizard
+  ralph.sh init --force                  # Re-run setup (overwrite config)
   ralph.sh build                         # Build project image
   ralph.sh start                         # Let Ralph choose a task
   ralph.sh start 42                      # Start agent on issue 42 (github mode)
@@ -225,39 +226,202 @@ cmd_build_base() {
     log_success "Base image built: $BASE_IMAGE_NAME"
 }
 
+# Detect GitHub repo from git remote
+detect_github_repo() {
+    git remote get-url origin 2>/dev/null | sed -E 's|.*github\.com[:/]||; s|\.git$||' || echo ""
+}
+
 cmd_init() {
     local target_dir="${1:-.}"
+    local force_setup=false
     
-    log_info "Initializing ralph in $target_dir..."
+    # Parse args
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --force|-f) force_setup=true; shift ;;
+            *) target_dir="$1"; shift ;;
+        esac
+    done
     
-    mkdir -p "$target_dir/ralph" "$target_dir/.ralph"
-    
-    if [ -f "$target_dir/.ralph/config.json" ]; then
-        log_warn ".ralph/config.json already exists, leaving it unchanged"
-    else
-        cp "$SCRIPT_DIR/templates/config.json" "$target_dir/.ralph/config.json"
-        log_info "Created .ralph/config.json"
+    # Check if config already exists
+    if [ -f "$target_dir/.ralph/config.json" ] && [ "$force_setup" = false ]; then
+        log_warn ".ralph/config.json already exists"
+        echo ""
+        read -p "Do you want to reconfigure? [y/N]: " reconfigure
+        if [[ ! "$reconfigure" =~ ^[Yy] ]]; then
+            echo "Use 'ralph init --force' to overwrite existing config"
+            return 0
+        fi
     fi
     
+    echo ""
+    echo -e "${GREEN}Welcome to Ralph!${NC} Let's set up your project for parallel AI agents."
+    echo ""
+    
+    # === Mode Selection ===
+    echo "Where should Ralph get tasks from?"
+    echo "  1) GitHub issues"
+    echo "  2) PRD file (prd.json)"
+    echo ""
+    read -p "Choose [1/2]: " task_choice
+    
+    local mode="github"
+    local repo=""
+    local prd_file=""
+    
+    case $task_choice in
+        1)
+            mode="github"
+            local detected=$(detect_github_repo)
+            if [ -n "$detected" ]; then
+                read -p "GitHub repo [$detected]: " repo
+                [ -z "$repo" ] && repo="$detected"
+            else
+                read -p "GitHub repo (owner/repo): " repo
+            fi
+            ;;
+        2)
+            mode="prd"
+            read -p "Path to PRD file [./prd.json]: " prd_file
+            [ -z "$prd_file" ] && prd_file="./prd.json"
+            ;;
+        *)
+            log_error "Invalid choice"
+            exit 1
+            ;;
+    esac
+    
+    # === Commit Mode ===
+    echo ""
+    echo "How should Ralph handle completed work?"
+    echo "  1) Raise a PR and wait for checks"
+    echo "  2) Commit to main and push"
+    echo "  3) Commit to main only (no push)"
+    echo "  4) Branch and commit (no push)"
+    echo "  5) Don't commit (leave files unstaged)"
+    echo ""
+    read -p "Choose [1/2/3/4/5]: " commit_choice
+    
+    local commit_mode="pr"
+    case $commit_choice in
+        1|"") commit_mode="pr" ;;
+        2) commit_mode="main" ;;
+        3) commit_mode="commit" ;;
+        4) commit_mode="branch" ;;
+        5) commit_mode="none" ;;
+        *) log_error "Invalid choice"; exit 1 ;;
+    esac
+    
+    # === Agent Review (only for PR mode) ===
+    local agent_review=""
+    if [ "$commit_mode" = "pr" ]; then
+        echo ""
+        echo "Should Ralph wait for an AI code reviewer?"
+        echo "  1) None (default)"
+        echo "  2) Copilot - Wait for GitHub Copilot review"
+        echo ""
+        read -p "Choose [1/2]: " review_choice
+        
+        case $review_choice in
+            1|"") agent_review="" ;;
+            2) agent_review="copilot" ;;
+            *) log_error "Invalid choice"; exit 1 ;;
+        esac
+    fi
+    
+    # === Agent Selection ===
+    echo ""
+    echo "Which AI agent should Ralph use?"
+    echo "  1) opencode (default)"
+    echo "  2) claude"
+    echo ""
+    read -p "Choose [1/2]: " agent_choice
+    
+    local agent="opencode"
+    case $agent_choice in
+        1|"") agent="opencode" ;;
+        2) agent="claude" ;;
+        *) log_error "Invalid choice"; exit 1 ;;
+    esac
+    
+    # === Notifications (optional) ===
+    echo ""
+    echo "Do you want to set up notifications? (optional)"
+    echo "  1) Skip for now"
+    echo "  2) ntfy.sh (free push notifications)"
+    echo "  3) Custom webhook"
+    echo ""
+    read -p "Choose [1/2/3]: " notify_choice
+    
+    local ntfy_url=""
+    local webhook_url=""
+    case $notify_choice in
+        2)
+            read -p "ntfy.sh topic URL (e.g., https://ntfy.sh/my-ralph): " ntfy_url
+            ;;
+        3)
+            read -p "Webhook URL: " webhook_url
+            ;;
+    esac
+    
+    # === Create directories ===
+    mkdir -p "$target_dir/ralph" "$target_dir/.ralph"
+    
+    # === Build config.json ===
+    local config_file="$target_dir/.ralph/config.json"
+    cat > "$config_file" << EOF
+{
+  "mode": "$mode",
+  "commitMode": "$commit_mode",
+  "repo": "$repo",
+  "prdFile": "$prd_file",
+  "agent": "$agent",
+  "agentReview": "$agent_review",
+  "notifications": {
+    "webhook": "$webhook_url",
+    "ntfy": "$ntfy_url",
+    "onSuccess": true,
+    "onFailure": true
+  }
+}
+EOF
+    log_success "Created .ralph/config.json"
+    
+    # === Copy Dockerfile if needed ===
     if [ -f "$target_dir/ralph/Dockerfile" ]; then
         log_warn "ralph/Dockerfile already exists, leaving it unchanged"
     else
         cp "$SCRIPT_DIR/templates/Dockerfile" "$target_dir/ralph/"
+        log_success "Created ralph/Dockerfile"
     fi
     
+    # === Copy prompt.md if needed ===
     if [ -f "$target_dir/ralph/prompt.md" ]; then
         log_warn "ralph/prompt.md already exists, leaving it unchanged"
     else
         cp "$SCRIPT_DIR/templates/prompt.md" "$target_dir/ralph/"
+        log_success "Created ralph/prompt.md"
     fi
     
-    log_success "Ralph config initialized"
+    # === Summary ===
+    echo ""
+    echo -e "${GREEN}Ralph is configured!${NC}"
+    echo ""
+    echo "Configuration:"
+    echo "  Mode:        $mode"
+    [ -n "$repo" ] && echo "  Repo:        $repo"
+    [ -n "$prd_file" ] && echo "  PRD file:    $prd_file"
+    echo "  Commit mode: $commit_mode"
+    echo "  Agent:       $agent"
+    [ -n "$agent_review" ] && echo "  Review:      $agent_review"
+    [ -n "$ntfy_url" ] && echo "  Notify:      $ntfy_url"
+    [ -n "$webhook_url" ] && echo "  Webhook:     $webhook_url"
     echo ""
     echo "Next steps:"
-    echo "  1. Edit .ralph/config.json with your project details"
-    echo "  2. Edit ralph/Dockerfile if needed"
-    echo "  3. Run: ralph.sh build"
-    echo "  4. Run: ralph.sh start --issue <number>"
+    echo "  1. Review/edit .ralph/config.json if needed"
+    echo "  2. Customize ralph/prompt.md with project-specific instructions"
+    echo "  3. Run: ralph build"
+    echo "  4. Run: ralph start --issue <number>"
 }
 
 cmd_build() {
