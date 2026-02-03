@@ -1,15 +1,15 @@
+# syntax=docker/dockerfile:1
 # Project-specific Ralph Dockerfile
 # Extends ralph-base with your project's repo and dependencies
 
 FROM ralph-base
 
-# Build argument for cloning private repos
-ARG GITHUB_TOKEN
-
-# Clone your repository
-# Replace with your repo URL (the token is used for private repos)
+# Clone your repository using BuildKit secret mount (token not baked into layers)
+# Replace with your repo URL
 ARG REPO_URL=https://github.com/your-org/your-project.git
-RUN if [ -n "$GITHUB_TOKEN" ]; then \
+RUN --mount=type=secret,id=github_token \
+    if [ -f /run/secrets/github_token ]; then \
+        GITHUB_TOKEN=$(cat /run/secrets/github_token) && \
         git clone "https://${GITHUB_TOKEN}@github.com/your-org/your-project.git" /workspace ; \
     else \
         git clone "$REPO_URL" /workspace ; \

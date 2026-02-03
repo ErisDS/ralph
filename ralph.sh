@@ -286,18 +286,24 @@ cmd_build() {
         cmd_build_base
     fi
     
-    # Check for GITHUB_TOKEN (needed for private repo clone)
-    if [ -z "$GITHUB_TOKEN" ]; then
-        log_warn "No GITHUB_TOKEN set. Build may fail for private repos."
-    fi
+    # Build secrets from config (e.g., ["GITHUB_TOKEN", "TIPTAP_PRO_TOKEN"])
+    # These are passed securely via BuildKit --secret, not baked into image layers
+    local secret_args=""
+    local build_secrets=$(jq -r '.buildSecrets // [] | .[]' "$config_file" 2>/dev/null)
     
-    local build_args=""
-    if [ -n "$GITHUB_TOKEN" ]; then
-        build_args="--build-arg GITHUB_TOKEN=$GITHUB_TOKEN"
-    fi
+    for secret_name in $build_secrets; do
+        # Convert to lowercase for the secret id (e.g., GITHUB_TOKEN -> github_token)
+        local secret_id=$(echo "$secret_name" | tr '[:upper:]' '[:lower:]')
+        # Check if the env var is set
+        local secret_value="${!secret_name}"
+        if [ -n "$secret_value" ]; then
+            secret_args="$secret_args --secret id=$secret_id,env=$secret_name"
+        else
+            log_warn "Secret $secret_name not set in environment"
+        fi
+    done
     
-    # Build from the project's ralph directory
-    docker build $build_args -t "$image_name" "$project_root/ralph"
+    DOCKER_BUILDKIT=1 docker build $secret_args -t "$image_name" "$project_root/ralph"
     
     log_success "Image built: $image_name"
 }
