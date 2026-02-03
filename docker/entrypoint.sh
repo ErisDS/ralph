@@ -255,6 +255,13 @@ fi
 # ============================================================
 cd /workspace
 
+# Source .env if it exists (for TIPTAP_PRO_TOKEN, etc.)
+if [ -f .env ]; then
+    set -a
+    source .env
+    set +a
+fi
+
 git config user.name "$GIT_USER"
 git config user.email "$GIT_EMAIL"
 

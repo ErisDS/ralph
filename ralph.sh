@@ -453,21 +453,15 @@ cmd_start() {
         docker_args+=(-v "$project_root/.ralph:/workspace/.ralph:ro")
     fi
     
+    # Mount .env file if it exists (for pnpm install, etc.)
+    if [ -f "$project_root/.env" ]; then
+        docker_args+=(-v "$project_root/.env:/workspace/.env:ro")
+    fi
+    
     # Add ANTHROPIC_API_KEY if set
     if [ -n "$ANTHROPIC_API_KEY" ]; then
         docker_args+=(-e "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY")
     fi
-    
-    # Add runtime secrets from config (e.g., ["TIPTAP_PRO_TOKEN"])
-    local runtime_secrets=$(jq -r '.runtimeSecrets // [] | .[]' "$config_file" 2>/dev/null)
-    for secret_name in $runtime_secrets; do
-        local secret_value="${!secret_name}"
-        if [ -n "$secret_value" ]; then
-            docker_args+=(-e "$secret_name=$secret_value")
-        else
-            log_warn "Runtime secret $secret_name not set in environment"
-        fi
-    done
 
     local opencode_auth_file="$HOME/.local/share/opencode/auth.json"
     if [ -f "$opencode_auth_file" ]; then
