@@ -262,6 +262,9 @@ if [ -f .env ]; then
     set +a
 fi
 
+# Mark workspace as safe (needed when running as root with workspace owned by ralph)
+git config --global --add safe.directory /workspace
+
 git config user.name "$GIT_USER"
 git config user.email "$GIT_EMAIL"
 
