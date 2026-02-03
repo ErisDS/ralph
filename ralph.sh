@@ -631,6 +631,8 @@ cmd_start() {
         # Run as root to access Docker socket (socket permissions don't transfer well)
         # The agent tools (opencode/claude) handle their own security
         docker_args+=(--user root)
+        # Use host network so container can reach localhost ports (e.g., databases)
+        docker_args+=(--network host)
     fi
     
     # Add ANTHROPIC_API_KEY if set
