@@ -550,6 +550,21 @@ get_idle_seconds() {
     echo "0"
 }
 
+# Check if agent is waiting for user input based on recent log output
+# Returns: "waiting" if permission/input prompt detected, "active" otherwise
+check_waiting_state() {
+    local container=$1
+    # Get last 20 lines of logs and check for common prompt patterns
+    local recent_logs=$(docker logs "$container" 2>&1 | tail -20)
+    
+    # Patterns that indicate waiting for user input
+    if echo "$recent_logs" | grep -qE '\[Y/n\]|\[y/N\]|Allow\?|Approve\?|yes/no|Confirm\?|Continue\?|Press Enter|waiting for|ask about this'; then
+        echo "waiting"
+    else
+        echo "active"
+    fi
+}
+
 cmd_list() {
     echo ""
     printf "%-12s %-12s %-10s %-10s %-6s %s\n" "PROJECT" "STATUS" "RUNNING" "IDLE" "TASK" "FOLDER"
@@ -588,8 +603,12 @@ cmd_list() {
                 local idle_secs=$(get_idle_seconds "$name")
                 idle_time=$(format_duration "$idle_secs")
                 
-                # If idle for more than 2 minutes, show as idle (likely waiting for input)
-                if [ "$idle_secs" -gt 120 ]; then
+                # Check if waiting for user input (permission prompt, etc.)
+                local waiting_state=$(check_waiting_state "$name")
+                
+                if [ "$waiting_state" = "waiting" ]; then
+                    state="${BLUE}⏸ waiting${NC}"
+                elif [ "$idle_secs" -gt 120 ]; then
                     state="${BLUE}⏸ idle${NC}"
                 else
                     state="${YELLOW}⚡ working${NC}"
@@ -1131,8 +1150,12 @@ cmd_watch() {
                     local idle_secs=$(get_idle_seconds "$name")
                     idle_time=$(format_duration "$idle_secs")
                     
-                    # If idle for more than 2 minutes, show as idle (likely waiting for input)
-                    if [ "$idle_secs" -gt 120 ]; then
+                    # Check if waiting for user input (permission prompt, etc.)
+                    local waiting_state=$(check_waiting_state "$name")
+                    
+                    if [ "$waiting_state" = "waiting" ]; then
+                        state="${BLUE}⏸ waiting${NC}"
+                    elif [ "$idle_secs" -gt 120 ]; then
                         state="${BLUE}⏸ idle${NC}"
                     else
                         state="${YELLOW}⚡ working${NC}"
