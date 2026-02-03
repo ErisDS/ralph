@@ -184,6 +184,7 @@ Examples:
   ralph-once.sh --prd ./tasks/prd.json   # PRD file mode
   ralph-once.sh --claude --prd ./prd.json # Use claude with PRD
   ralph-once.sh --setup                  # Re-run interactive setup
+  ralph-once.sh 42                       # Work on issue #42 (shorthand)
   ralph-once.sh --task 42                # Work on task/issue #42
   ralph-once.sh --issue 15 myorg/repo    # Work on issue #15 from repo
 EOF
@@ -219,7 +220,14 @@ while [[ $# -gt 0 ]]; do
         -h|--help)     show_usage; exit 0 ;;
         -v|--version)  echo "ralph-once $VERSION"; exit 0 ;;
         -*)            echo "Unknown option: $1"; show_usage; exit 1 ;;
-        *)             [ -z "$REPO" ] && MODE="github" && REPO="$1"; shift ;;
+        *)             # Bare number = issue shorthand, otherwise repo
+                       if [[ "$1" =~ ^[0-9]+$ ]]; then
+                           SPECIFIC_TASK="$1"
+                       elif [ -z "$REPO" ]; then
+                           MODE="github"
+                           REPO="$1"
+                       fi
+                       shift ;;
     esac
 done
 
