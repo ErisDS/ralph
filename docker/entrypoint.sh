@@ -269,10 +269,16 @@ fi
 cd /workspace
 
 # Source .env if it exists (for TIPTAP_PRO_TOKEN, etc.)
+# Use a safer method that handles values with spaces/special chars
 if [ -f .env ]; then
-    set -a
-    source .env
-    set +a
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Skip comments and empty lines
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+        # Only export lines that look like VAR=value
+        if [[ "$line" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
+            export "$line"
+        fi
+    done < .env
 fi
 
 # Mark workspace as safe (needed when running as root with workspace owned by ralph)
