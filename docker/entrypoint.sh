@@ -234,10 +234,23 @@ fi
 echo "Setting up opencode configuration..."
 mkdir -p "$HOME/.config/opencode"
 
-# Copy host's global opencode config file only (not plugins - they may not work in container)
+# Copy host's global opencode config (config file, commands, skills - not plugins which may not work)
 HOST_OPENCODE_DIR="/home/ralph/.config/opencode-host"
-if [ -f "$HOST_OPENCODE_DIR/opencode.json" ]; then
-    cp "$HOST_OPENCODE_DIR/opencode.json" "$HOME/.config/opencode/" || true
+if [ -d "$HOST_OPENCODE_DIR" ]; then
+    # Copy main config file
+    if [ -f "$HOST_OPENCODE_DIR/opencode.json" ]; then
+        cp "$HOST_OPENCODE_DIR/opencode.json" "$HOME/.config/opencode/" || true
+    fi
+    
+    # Copy commands directory (custom slash commands)
+    if [ -d "$HOST_OPENCODE_DIR/commands" ]; then
+        cp -r "$HOST_OPENCODE_DIR/commands" "$HOME/.config/opencode/" || true
+    fi
+    
+    # Copy skills directory
+    if [ -d "$HOST_OPENCODE_DIR/skills" ]; then
+        cp -r "$HOST_OPENCODE_DIR/skills" "$HOME/.config/opencode/" || true
+    fi
 fi
 
 # If no global config exists, create a minimal default
