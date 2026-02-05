@@ -83,10 +83,13 @@ You are ONLY done when ALL of the following are true:
 {{PROGRESS_CHECKLIST_ITEM}}
 - [ ] If there are deployments, wait for them to succeed and re-verify your changes work
 {{PRE_COMMIT_EXTRA_ITEM}}
+- [ ] **You have completed the Deliver steps below** (this is required!)
 
 ---
 
 ## 4. Deliver
+
+**This section is MANDATORY** - do not skip it!
 
 ONLY after meeting ALL criteria in 'Definition of Done':
 
@@ -96,6 +99,13 @@ ONLY after meeting ALL criteria in 'Definition of Done':
 
 {{SECTION_REVIEW}}
 {{PROJECT_INSTRUCTIONS}}
-When complete, output: <promise>COMPLETE</promise>
 
-**IMPORTANT**: Only work on ONE {{TASK_ITEM}}.
+---
+
+## IMPORTANT REMINDERS
+
+1. **Only work on ONE {{TASK_ITEM}}** - do not start additional work
+2. **You MUST complete the Deliver steps** - working code is NOT enough, you must follow section 4 exactly
+3. **Do NOT output COMPLETE until delivery is done** - the PR must be opened (or commits pushed, depending on mode)
+
+When complete, output: <promise>COMPLETE</promise>
