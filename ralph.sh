@@ -575,9 +575,20 @@ cmd_start() {
         exit 1
     fi
 
+    # Get GITHUB_TOKEN from gh auth if not set
+    if [ -z "$GITHUB_TOKEN" ]; then
+        if command -v gh &> /dev/null && gh auth status &> /dev/null; then
+            GITHUB_TOKEN=$(gh auth token 2>/dev/null)
+            if [ -n "$GITHUB_TOKEN" ]; then
+                log_info "Using token from gh auth"
+            fi
+        fi
+    fi
+    
     if [ "$task_type" = "issue" ] || { [ -z "$task_type" ] && [ "$mode_from_config" = "github" ]; }; then
         if [ -z "$GITHUB_TOKEN" ]; then
-            log_error "GITHUB_TOKEN environment variable is required"
+            log_error "GITHUB_TOKEN not set and gh auth not available"
+            log_info "Run 'gh auth login' or set GITHUB_TOKEN"
             exit 1
         fi
     else
