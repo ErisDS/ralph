@@ -453,6 +453,17 @@ cmd_build() {
         cmd_build_base
     fi
     
+    # Get GITHUB_TOKEN from gh auth if not set
+    if [ -z "$GITHUB_TOKEN" ]; then
+        if command -v gh &> /dev/null && gh auth status &> /dev/null; then
+            GITHUB_TOKEN=$(gh auth token 2>/dev/null)
+            if [ -n "$GITHUB_TOKEN" ]; then
+                log_info "Using token from gh auth"
+                export GITHUB_TOKEN
+            fi
+        fi
+    fi
+    
     # Build secrets from config (e.g., ["GITHUB_TOKEN", "TIPTAP_PRO_TOKEN"])
     # These are passed securely via BuildKit --secret, not baked into image layers
     local secret_args=""
