@@ -232,35 +232,50 @@ fi
 # Setup opencode config
 # ============================================================
 echo "Setting up opencode configuration..."
-mkdir -p "$HOME/.config/opencode"
 
-# Copy host's global opencode config (config file, commands, skills - not plugins which may not work)
-HOST_OPENCODE_DIR="/home/ralph/.config/opencode-host"
-if [ -d "$HOST_OPENCODE_DIR" ]; then
-    # Copy main config file
-    if [ -f "$HOST_OPENCODE_DIR/opencode.json" ]; then
-        cp "$HOST_OPENCODE_DIR/opencode.json" "$HOME/.config/opencode/" || true
+# Setup function to copy configs to a target directory
+setup_opencode_config() {
+    local target_dir="$1"
+    mkdir -p "$target_dir"
+    
+    # Copy host's global opencode config (config file, commands, skills - not plugins which may not work)
+    HOST_OPENCODE_DIR="/home/ralph/.config/opencode-host"
+    if [ -d "$HOST_OPENCODE_DIR" ]; then
+        # Copy main config file
+        if [ -f "$HOST_OPENCODE_DIR/opencode.json" ]; then
+            cp "$HOST_OPENCODE_DIR/opencode.json" "$target_dir/" || true
+        fi
+        
+        # Copy commands directory (custom slash commands)
+        # Use -L to follow symlinks (host may symlink to shared location)
+        if [ -d "$HOST_OPENCODE_DIR/commands" ]; then
+            cp -rL "$HOST_OPENCODE_DIR/commands" "$target_dir/" || true
+        fi
+        
+        # Copy skills directory
+        # Use -L to follow symlinks
+        if [ -d "$HOST_OPENCODE_DIR/skills" ]; then
+            cp -rL "$HOST_OPENCODE_DIR/skills" "$target_dir/" || true
+        fi
     fi
     
-    # Copy commands directory (custom slash commands)
-    if [ -d "$HOST_OPENCODE_DIR/commands" ]; then
-        cp -r "$HOST_OPENCODE_DIR/commands" "$HOME/.config/opencode/" || true
-    fi
-    
-    # Copy skills directory
-    if [ -d "$HOST_OPENCODE_DIR/skills" ]; then
-        cp -r "$HOST_OPENCODE_DIR/skills" "$HOME/.config/opencode/" || true
-    fi
-fi
-
-# If no global config exists, create a minimal default
-if [ ! -f "$HOME/.config/opencode/opencode.json" ]; then
-    cat > "$HOME/.config/opencode/opencode.json" << EOF
+    # If no global config exists, create a minimal default
+    if [ ! -f "$target_dir/opencode.json" ]; then
+        cat > "$target_dir/opencode.json" << EOF
 {
   "\$schema": "https://opencode.ai/config.json",
   "model": "$MODEL"
 }
 EOF
+    fi
+}
+
+# Always setup for /home/ralph (the ralph user)
+setup_opencode_config "/home/ralph/.config/opencode"
+
+# If running as root, also setup /root config (for docker exec compatibility)
+if [ "$(id -u)" = "0" ]; then
+    setup_opencode_config "/root/.config/opencode"
 fi
 
 # ============================================================

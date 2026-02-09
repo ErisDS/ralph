@@ -670,6 +670,23 @@ cmd_start() {
     local opencode_config_dir="$HOME/.config/opencode"
     if [ -d "$opencode_config_dir" ]; then
         docker_args+=(-v "$opencode_config_dir:/home/ralph/.config/opencode-host:ro")
+        
+        # If commands/skills are symlinks, also mount their real paths
+        # so the entrypoint can follow them
+        local commands_dir="$opencode_config_dir/commands"
+        if [ -L "$commands_dir" ]; then
+            local real_commands=$(readlink -f "$commands_dir")
+            if [ -d "$real_commands" ]; then
+                docker_args+=(-v "$real_commands:$real_commands:ro")
+            fi
+        fi
+        local skills_dir="$opencode_config_dir/skills"
+        if [ -L "$skills_dir" ]; then
+            local real_skills=$(readlink -f "$skills_dir")
+            if [ -d "$real_skills" ]; then
+                docker_args+=(-v "$real_skills:$real_skills:ro")
+            fi
+        fi
     fi
 
     local claude_config_dir="$HOME/.config/claude"
