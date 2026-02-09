@@ -19,8 +19,8 @@ RUN --mount=type=secret,id=github_token \
 WORKDIR /workspace
 
 # Install dependencies (customize for your package manager)
-# For pnpm:
-RUN pnpm install --frozen-lockfile
+# For pnpm (CI=true prevents interactive prompts):
+RUN CI=true pnpm install --frozen-lockfile
 
 # For npm:
 # RUN npm ci
