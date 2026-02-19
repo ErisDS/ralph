@@ -174,8 +174,10 @@ Options:
   --commit        Commit to main but don't push
   --branch        Create a branch and commit (no push)
   --none          Don't commit, leave files unstaged
+  --cli <name>    Use opencode or claude as the AI agent
   --opencode      Use opencode as the AI agent (default)
   --claude        Use claude as the AI agent
+  --model <model> Override model (opencode only)
   --setup         Force interactive setup (overwrites existing config)
 
 Examples:
@@ -198,6 +200,7 @@ REPO=""
 PRD_FILE=""
 COMMIT_MODE=""
 AGENT=""
+MODEL_OVERRIDE=""
 
 AGENT_REVIEW=""
 FORCE_SETUP=false
@@ -214,8 +217,10 @@ while [[ $# -gt 0 ]]; do
         --commit)      COMMIT_MODE="commit"; shift ;;
         --branch)      COMMIT_MODE="branch"; shift ;;
         --none)        COMMIT_MODE="none"; shift ;;
+        --cli)         AGENT="$2"; shift 2 ;;
         --opencode)    AGENT="opencode"; shift ;;
         --claude)      AGENT="claude"; shift ;;
+        --model)       MODEL_OVERRIDE="$2"; shift 2 ;;
         --setup)       FORCE_SETUP=true; shift ;;
         -h|--help)     show_usage; exit 0 ;;
         -v|--version)  echo "ralph-once $VERSION"; exit 0 ;;
@@ -252,6 +257,7 @@ FLAG_REPO="$REPO"
 FLAG_PRD_FILE="$PRD_FILE"
 FLAG_COMMIT_MODE="$COMMIT_MODE"
 FLAG_AGENT="$AGENT"
+FLAG_MODEL_OVERRIDE="$MODEL_OVERRIDE"
 
 FLAG_AGENT_REVIEW="$AGENT_REVIEW"
 
@@ -272,12 +278,18 @@ fi
 [ -n "$FLAG_PRD_FILE" ] && PRD_FILE="$FLAG_PRD_FILE"
 [ -n "$FLAG_COMMIT_MODE" ] && COMMIT_MODE="$FLAG_COMMIT_MODE"
 [ -n "$FLAG_AGENT" ] && AGENT="$FLAG_AGENT"
+[ -n "$FLAG_MODEL_OVERRIDE" ] && MODEL_OVERRIDE="$FLAG_MODEL_OVERRIDE"
 
 [ -n "$FLAG_AGENT_REVIEW" ] && AGENT_REVIEW="$FLAG_AGENT_REVIEW"
 
 # Defaults
 [ -z "$COMMIT_MODE" ] && COMMIT_MODE="pr"
 [ -z "$AGENT" ] && AGENT="opencode"
+
+case "$AGENT" in
+    opencode|claude) ;;
+    *) echo "Error: Unknown agent '$AGENT'"; exit 1 ;;
+esac
 
 # Normalize repo (handles URLs, .git suffix, typos)
 [ -n "$REPO" ] && REPO=$(normalize_repo "$REPO")
@@ -550,7 +562,18 @@ PROMPT="${PROMPT//\{\{PROJECT_INSTRUCTIONS\}\}/}"  # Empty for non-Docker
 check_dependency "$AGENT"
 
 case "$AGENT" in
-    opencode) opencode --prompt "$PROMPT" ;;
-    claude)   claude "$PROMPT" ;;
-    *)        echo "Error: Unknown agent '$AGENT'"; exit 1 ;;
+    opencode)
+        if [ -n "$MODEL_OVERRIDE" ]; then
+            opencode --model "$MODEL_OVERRIDE" --prompt "$PROMPT"
+        else
+            opencode --prompt "$PROMPT"
+        fi
+        ;;
+    claude)
+        if [ -n "$MODEL_OVERRIDE" ]; then
+            echo "Warning: --model is only supported for opencode; ignoring."
+        fi
+        claude "$PROMPT"
+        ;;
+    *) echo "Error: Unknown agent '$AGENT'"; exit 1 ;;
 esac

@@ -34,6 +34,7 @@ GIT_USER=$(jq -r '.git.user // "Ralph Bot"' "$CONFIG_FILE")
 GIT_EMAIL=$(jq -r '.git.email // "ralph@example.com"' "$CONFIG_FILE")
 MODEL=$(jq -r '.agent.model // "anthropic/claude-sonnet-4-20250514"' "$CONFIG_FILE")
 
+
 REPO_RAW=$(jq -r 'if (.repo|type) == "string" then .repo elif (.repo.owner and .repo.name) then "\(.repo.owner)/\(.repo.name)" elif (.repo.url and (.repo.url|type) == "string") then .repo.url else "" end' "$CONFIG_FILE")
 REPO=""
 if [ -n "$REPO_RAW" ]; then
@@ -60,6 +61,9 @@ SPECIFIC_TASK=""
 CUSTOM_PROMPT=""
 OVERRIDE_MODE=""
 OVERRIDE_PRD_FILE=""
+CLI_OVERRIDE=""
+MODEL_CLI_OVERRIDE=""
+MODEL_OVERRIDE=""
 
 show_usage() {
     cat << 'EOF'
@@ -70,6 +74,8 @@ Options:
   --task <number>      Alias for --issue
   --prd <file>         Use PRD mode with the given PRD file
   --prompt <text>      Use a custom prompt instead of auto task selection
+  --cli <name>         Override agent CLI (opencode or claude)
+  --model <model>      Override model (opencode only)
   -h, --help           Show this help message
 
 Environment variables:
@@ -97,6 +103,14 @@ while [[ $# -gt 0 ]]; do
             CUSTOM_PROMPT="$2"
             shift 2
             ;;
+        --cli)
+            CLI_OVERRIDE="$2"
+            shift 2
+            ;;
+        --model)
+            MODEL_CLI_OVERRIDE="$2"
+            shift 2
+            ;;
         -h|--help)
             show_usage
             exit 0
@@ -115,6 +129,15 @@ fi
 
 if [ -n "$OVERRIDE_PRD_FILE" ]; then
     PRD_FILE="$OVERRIDE_PRD_FILE"
+fi
+
+if [ -n "$CLI_OVERRIDE" ]; then
+    AGENT_CLI="$CLI_OVERRIDE"
+fi
+
+if [ -n "$MODEL_CLI_OVERRIDE" ]; then
+    MODEL="$MODEL_CLI_OVERRIDE"
+    MODEL_OVERRIDE="$MODEL_CLI_OVERRIDE"
 fi
 
 # ============================================================
@@ -270,12 +293,34 @@ EOF
     fi
 }
 
+apply_opencode_model_override() {
+    local target_dir="$1"
+    local config_file="$target_dir/opencode.json"
+    if [ -f "$config_file" ]; then
+        local tmp_file
+        tmp_file=$(mktemp)
+        if jq --arg model "$MODEL" '.model = $model' "$config_file" > "$tmp_file"; then
+            mv "$tmp_file" "$config_file"
+        else
+            rm -f "$tmp_file"
+            echo "Warning: Failed to update $config_file"
+        fi
+    fi
+}
+
 # Always setup for /home/ralph (the ralph user)
 setup_opencode_config "/home/ralph/.config/opencode"
+
+if [ -n "$MODEL_OVERRIDE" ] && [ "$AGENT_CLI" = "opencode" ]; then
+    apply_opencode_model_override "/home/ralph/.config/opencode"
+fi
 
 # If running as root, also setup /root config (for docker exec compatibility)
 if [ "$(id -u)" = "0" ]; then
     setup_opencode_config "/root/.config/opencode"
+    if [ -n "$MODEL_OVERRIDE" ] && [ "$AGENT_CLI" = "opencode" ]; then
+        apply_opencode_model_override "/root/.config/opencode"
+    fi
 fi
 
 # ============================================================

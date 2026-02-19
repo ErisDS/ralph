@@ -191,6 +191,8 @@ Start Options:
   --task <number>      Alias for --issue
   --prd <file>         Use PRD mode with the given PRD file
   --prompt <text>      Use a custom prompt
+  --cli <name>         Override agent CLI (opencode or claude)
+  --model <model>      Override model (opencode only)
   (no args)            Let Ralph choose its own task based on config.json
 
 Examples:
@@ -505,6 +507,8 @@ cmd_start() {
     local task_type=""
     local task_value=""
     local task_id=""
+    local agent_cli_override=""
+    local model_override=""
     local mode_from_config
     mode_from_config=$(jq -r '.mode // "github"' "$config_file")
     
@@ -542,6 +546,14 @@ cmd_start() {
                 task_type="prompt"
                 task_value="$2"
                 task_id="custom-$(date +%s)"
+                shift 2
+                ;;
+            --cli)
+                agent_cli_override="$2"
+                shift 2
+                ;;
+            --model)
+                model_override="$2"
                 shift 2
                 ;;
             prompt)
@@ -708,6 +720,12 @@ cmd_start() {
     docker_args+=("$image_name")
     if [ -n "$task_type" ]; then
         docker_args+=("--$task_type" "$task_value")
+    fi
+    if [ -n "$agent_cli_override" ]; then
+        docker_args+=("--cli" "$agent_cli_override")
+    fi
+    if [ -n "$model_override" ]; then
+        docker_args+=("--model" "$model_override")
     fi
     
     log_info "Starting container: $cname"

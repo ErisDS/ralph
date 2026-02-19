@@ -23,6 +23,8 @@ ralph.sh build-base              # Build base image (one time)
 ralph.sh build                   # Build project image
 ralph.sh start                   # Let Ralph choose a task
 ralph.sh start --issue 42        # Start agent on issue 42
+ralph.sh start --cli claude      # Override agent CLI for this run
+ralph.sh start --model anthropic/claude-sonnet-4-20250514  # Override model (opencode)
 ralph.sh list                    # See all running agents
 ```
 
@@ -167,6 +169,7 @@ Notes:
 - `prdFile`: used when `mode` is `prd`
 - `commitMode`: `pr`, `main`, `commit`, `branch`, or `none`
 - `agent.review`: set to `copilot` to require Copilot review in PR mode
+- `ralph.sh start --cli` and `--model` override config for a single run
 
 Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.ralph/prompt-once.md` (single-agent).
 
@@ -342,8 +345,10 @@ ralph-once.sh --setup
 ### AI Agent Selection
 
 ```bash
+--cli <name>  # Use opencode or claude
 --opencode  # Use opencode (default)
 --claude    # Use claude
+--model <model> # Override model (opencode only)
 ```
 
 ### Configuration
