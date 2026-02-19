@@ -172,6 +172,7 @@ Usage: ralph.sh <command> [options]
 Commands:
   build-base           Build the ralph-base Docker image
   build                Build project-specific image (run from project dir)
+  models               List available opencode models
   start                Start a new agent container
   restart              Stop and restart a container with same task
   attach               Connect to agent for follow-up instructions
@@ -1638,6 +1639,15 @@ cmd_notify() {
     log_success "Notification sent"
 }
 
+cmd_models() {
+    if ! command -v opencode &>/dev/null; then
+        log_error "opencode not found in PATH"
+        exit 1
+    fi
+
+    opencode models "$@"
+}
+
 # ============================================================
 # Main
 # ============================================================
@@ -1659,6 +1669,9 @@ case "$COMMAND" in
         ;;
     build)
         cmd_build "$@"
+        ;;
+    models)
+        cmd_models "$@"
         ;;
     start)
         cmd_start "$@"

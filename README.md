@@ -183,6 +183,7 @@ Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.r
 | `init`                 | Interactive setup wizard for new projects     |
 | `init --force`         | Re-run setup, overwrite existing config       |
 | `build`                | Build project-specific image                 |
+| `models [provider]`    | List available opencode models               |
 | `start`                | Start agent using config.json task selection |
 | `start --issue N`      | Start agent on a specific GitHub issue       |
 | `start 42`             | Start agent on issue 42 (bare number, github mode) |
