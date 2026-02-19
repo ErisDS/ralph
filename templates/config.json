@@ -3,6 +3,10 @@
   "commitMode": "pr",
   "repo": "your-org/your-project",
   "prdFile": "./prd.json",
+  "runtime": {
+    "node": "24",
+    "packageManager": "pnpm"
+  },
   "agent": "opencode",
   "agentReview": "",
   "notifications": {

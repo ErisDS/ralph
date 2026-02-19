@@ -20,6 +20,7 @@ Run multiple agents simultaneously in isolated Docker containers. Each agent get
 
 ```bash
 ralph.sh build-base              # Build base image (one time)
+ralph.sh build-base --node 24    # Build base image for Node 24
 ralph.sh build                   # Build project image
 ralph.sh start                   # Let Ralph choose a task
 ralph.sh start --issue 42        # Start agent on issue 42
@@ -91,7 +92,7 @@ export GITHUB_TOKEN="ghp_..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 
 # 2. Build base image (one time)
-./ralph.sh build-base
+./ralph.sh build-base --node 24
 
 # 3. Initialize ralph in your project (interactive wizard)
 cd ~/your-project
@@ -170,6 +171,9 @@ Notes:
 - `mode`: `github` or `prd`
 - `prdFile`: used when `mode` is `prd`
 - `commitMode`: `pr`, `main`, `commit`, `branch`, or `none`
+- `runtime.node`: selects the base image tag (`ralph-base-node<version>`) for Docker builds
+- `runtime.packageManager`: controls default install/build commands in the Dockerfile
+- `commands.install` and `commands.build`: override install/build steps when set
 - `agent.review`: set to `copilot` to require Copilot review in PR mode
 - `ralph.sh start --cli` and `--model` override config for a single run (or use `--opencode`/`--claude`)
 
@@ -179,7 +183,7 @@ Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.r
 
 | Command                | Description                                  |
 | ---------------------- | -------------------------------------------- |
-| `build-base`           | Build the ralph-base Docker image (one time) |
+| `build-base`           | Build the ralph-base Docker image (use `--node <version>`) |
 | `init`                 | Interactive setup wizard for new projects     |
 | `init --force`         | Re-run setup, overwrite existing config       |
 | `build`                | Build project-specific image                 |

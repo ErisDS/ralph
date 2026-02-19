@@ -4,7 +4,8 @@
 # Build: docker build -t ralph-base -f docker/Dockerfile.base .
 # Projects extend: FROM ralph-base
 
-FROM node:24-bookworm
+ARG NODE_VERSION=24
+FROM node:${NODE_VERSION}-bookworm
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \

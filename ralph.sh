@@ -200,6 +200,7 @@ Start Options:
 
 Examples:
   ralph.sh build-base                    # Build base image (one time)
+  ralph.sh build-base --node 24          # Build base image for Node 24
   ralph.sh init                          # Interactive setup wizard
   ralph.sh init --force                  # Re-run setup (overwrite config)
   ralph.sh build                         # Build project image
@@ -224,16 +225,68 @@ EOF
 }
 
 cmd_build_base() {
-    log_info "Building ralph-base image..."
-    
-    docker build -t "$BASE_IMAGE_NAME" -f "$SCRIPT_DIR/docker/Dockerfile.base" "$SCRIPT_DIR"
-    
-    log_success "Base image built: $BASE_IMAGE_NAME"
+    local node_version=""
+    local image_tag="$BASE_IMAGE_NAME"
+    local build_args=()
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --node|--node-version)
+                node_version="$2"
+                shift 2
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    if [ -n "$node_version" ]; then
+        node_version="${node_version#v}"
+        image_tag="${BASE_IMAGE_NAME}-node${node_version}"
+        build_args+=(--build-arg "NODE_VERSION=$node_version")
+        log_info "Building ralph-base image (node $node_version)..."
+    else
+        log_info "Building ralph-base image..."
+    fi
+
+    docker build "${build_args[@]}" -t "$image_tag" -f "$SCRIPT_DIR/docker/Dockerfile.base" "$SCRIPT_DIR"
+
+    log_success "Base image built: $image_tag"
 }
 
 # Detect GitHub repo from git remote
 detect_github_repo() {
     git remote get-url origin 2>/dev/null | sed -E 's|.*github\.com[:/]||; s|\.git$||' || echo ""
+}
+
+detect_node_version() {
+    local root="$1"
+    local version=""
+    if [ -f "$root/.nvmrc" ]; then
+        version=$(tr -d 'v' < "$root/.nvmrc" | tr -d '[:space:]')
+    elif [ -f "$root/.node-version" ]; then
+        version=$(tr -d 'v' < "$root/.node-version" | tr -d '[:space:]')
+    fi
+    echo "$version"
+}
+
+detect_package_manager() {
+    local root="$1"
+    if [ -f "$root/pnpm-lock.yaml" ]; then
+        echo "pnpm"
+        return
+    fi
+    if [ -f "$root/yarn.lock" ]; then
+        echo "yarn"
+        return
+    fi
+    if [ -f "$root/package-lock.json" ] || [ -f "$root/npm-shrinkwrap.json" ]; then
+        echo "npm"
+        return
+    fi
+    echo ""
 }
 
 cmd_init() {
@@ -368,6 +421,14 @@ cmd_init() {
             read -p "Webhook URL: " webhook_url
             ;;
     esac
+
+    # === Runtime (auto-detected) ===
+    local runtime_node
+    local runtime_pm
+    runtime_node=$(detect_node_version "$target_dir")
+    runtime_pm=$(detect_package_manager "$target_dir")
+    [ -z "$runtime_node" ] && runtime_node="24"
+    [ -z "$runtime_pm" ] && runtime_pm="pnpm"
     
     # === Create directories ===
     mkdir -p "$target_dir/ralph" "$target_dir/.ralph"
@@ -380,6 +441,10 @@ cmd_init() {
   "commitMode": "$commit_mode",
   "repo": "$repo",
   "prdFile": "$prd_file",
+  "runtime": {
+    "node": "$runtime_node",
+    "packageManager": "$runtime_pm"
+  },
   "agent": "$agent",
   "agentReview": "$agent_review",
   "notifications": {
@@ -417,6 +482,7 @@ EOF
     [ -n "$repo" ] && echo "  Repo:        $repo"
     [ -n "$prd_file" ] && echo "  PRD file:    $prd_file"
     echo "  Commit mode: $commit_mode"
+    echo "  Runtime:     node $runtime_node, $runtime_pm"
     echo "  Agent:       $agent"
     [ -n "$agent_review" ] && echo "  Review:      $agent_review"
     [ -n "$ntfy_url" ] && echo "  Notify:      $ntfy_url"
@@ -449,13 +515,42 @@ cmd_build() {
     
     local project_name=$(get_project_name "$project_root")
     local image_name=$(get_image_name "$project_name")
+    local runtime_node
+    local runtime_pm
+    local install_cmd
+    local build_cmd
+
+    runtime_node=$(jq -r '.runtime.node // ""' "$config_file")
+    runtime_pm=$(jq -r '.runtime.packageManager // ""' "$config_file")
+    install_cmd=$(jq -r '.commands.install // ""' "$config_file")
+    build_cmd=$(jq -r '.commands.build // ""' "$config_file")
+
+    [ "$runtime_node" = "null" ] && runtime_node=""
+    [ "$runtime_pm" = "null" ] && runtime_pm=""
+    [ "$install_cmd" = "null" ] && install_cmd=""
+    [ "$build_cmd" = "null" ] && build_cmd=""
+
+    if [ -n "$runtime_node" ]; then
+        runtime_node="${runtime_node#v}"
+    fi
+
+    [ -z "$runtime_pm" ] && runtime_pm="pnpm"
+
+    local base_image="$BASE_IMAGE_NAME"
+    if [ -n "$runtime_node" ]; then
+        base_image="${BASE_IMAGE_NAME}-node${runtime_node}"
+    fi
     
     log_info "Building image for project: $project_name"
     
     # Check base image exists
-    if ! image_exists "$BASE_IMAGE_NAME"; then
-        log_warn "Base image not found. Building it first..."
-        cmd_build_base
+    if ! image_exists "$base_image"; then
+        log_warn "Base image not found: $base_image. Building it first..."
+        if [ -n "$runtime_node" ]; then
+            cmd_build_base --node "$runtime_node"
+        else
+            cmd_build_base
+        fi
     fi
     
     # Get GITHUB_TOKEN from gh auth if not set
@@ -486,7 +581,21 @@ cmd_build() {
         fi
     done
     
-    DOCKER_BUILDKIT=1 docker build $secret_args -t "$image_name" "$project_root/ralph"
+    local build_args=(--build-arg "RALPH_BASE_IMAGE=$base_image" --build-arg "PACKAGE_MANAGER=$runtime_pm")
+    if [ -n "$install_cmd" ]; then
+        build_args+=(--build-arg "INSTALL_CMD=$install_cmd")
+    fi
+    if [ -n "$build_cmd" ]; then
+        build_args+=(--build-arg "BUILD_CMD=$build_cmd")
+    fi
+
+    local docker_build_args=()
+    if [ -n "$secret_args" ]; then
+        docker_build_args+=($secret_args)
+    fi
+    docker_build_args+=("${build_args[@]}")
+
+    DOCKER_BUILDKIT=1 docker build "${docker_build_args[@]}" -t "$image_name" "$project_root/ralph"
     
     log_success "Image built: $image_name"
 }
