@@ -32,7 +32,7 @@ AGENT_CLI=$(jq -r 'if (.agent|type) == "string" then .agent elif (.agent.cli|typ
 AGENT_REVIEW=$(jq -r 'if (.agentReview|type) == "string" then .agentReview elif (.agent.review|type) == "string" then .agent.review else "" end' "$CONFIG_FILE")
 GIT_USER=$(jq -r '.git.user // "Ralph Bot"' "$CONFIG_FILE")
 GIT_EMAIL=$(jq -r '.git.email // "ralph@example.com"' "$CONFIG_FILE")
-MODEL=$(jq -r '.agent.model // "anthropic/claude-sonnet-4-20250514"' "$CONFIG_FILE")
+MODEL=$(jq -r '.agent.model // "openai/gpt-5.3"' "$CONFIG_FILE")
 
 
 REPO_RAW=$(jq -r 'if (.repo|type) == "string" then .repo elif (.repo.owner and .repo.name) then "\(.repo.owner)/\(.repo.name)" elif (.repo.url and (.repo.url|type) == "string") then .repo.url else "" end' "$CONFIG_FILE")
@@ -246,9 +246,18 @@ else
     fi
 fi
 
-if [ -z "$ANTHROPIC_API_KEY" ]; then
-    echo "Warning: No ANTHROPIC_API_KEY set"
-    echo "opencode may fail to authenticate with Anthropic"
+MODEL_PROVIDER="${MODEL%%/*}"
+MODEL_API_KEY_VAR=""
+case "$MODEL_PROVIDER" in
+    anthropic) MODEL_API_KEY_VAR="ANTHROPIC_API_KEY" ;;
+    openai) MODEL_API_KEY_VAR="OPENAI_API_KEY" ;;
+esac
+
+if [ -n "$MODEL_API_KEY_VAR" ]; then
+    if [ -z "${!MODEL_API_KEY_VAR}" ]; then
+        echo "Warning: No ${MODEL_API_KEY_VAR} set"
+        echo "opencode may fail to authenticate with ${MODEL_PROVIDER}"
+    fi
 fi
 
 # ============================================================

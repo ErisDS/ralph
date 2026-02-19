@@ -26,7 +26,7 @@ ralph.sh start --issue 42        # Start agent on issue 42
 ralph.sh start --cli claude      # Override agent CLI for this run
 ralph.sh start --opencode        # Shorthand for --cli opencode
 ralph.sh start --claude          # Shorthand for --cli claude
-ralph.sh start --model anthropic/claude-sonnet-4-20250514  # Override model (opencode)
+ralph.sh start --model openai/gpt-5.3  # Override model (opencode)
 ralph.sh list                    # See all running agents
 ```
 
@@ -155,7 +155,7 @@ Single-agent prompt template can be overridden per project by creating `.ralph/p
   },
   "agent": {
     "cli": "opencode",
-    "model": "anthropic/claude-sonnet-4-20250514",
+    "model": "openai/gpt-5.3",
     "review": null
   },
   "git": {
@@ -218,7 +218,7 @@ For project-specific MCP servers or model settings, create `opencode.json` in yo
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "anthropic/claude-sonnet-4-20250514",
+  "model": "openai/gpt-5.3",
   "mcp": {
     "railway": {
       "type": "local",
@@ -397,7 +397,8 @@ Both modes support PRD (Product Requirements Document) files:
 | Variable            | Required      | Description                                  |
 | ------------------- | ------------- | -------------------------------------------- |
 | `GITHUB_TOKEN`      | Yes           | GitHub personal access token with repo scope |
-| `ANTHROPIC_API_KEY` | For Anthropic | API key for Claude models                    |
+| `OPENAI_API_KEY`    | For OpenAI    | API key for OpenAI models                    |
+| `ANTHROPIC_API_KEY` | For Anthropic | API key for Anthropic models                 |
 | `RALPH_CPUS`        | No            | CPU limit per container (default: 2)         |
 | `RALPH_MEMORY`      | No            | Memory limit per container (default: 4g)     |
 
