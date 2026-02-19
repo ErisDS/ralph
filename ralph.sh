@@ -192,6 +192,8 @@ Start Options:
   --prd <file>         Use PRD mode with the given PRD file
   --prompt <text>      Use a custom prompt
   --cli <name>         Override agent CLI (opencode or claude)
+  --opencode           Shorthand for --cli opencode
+  --claude             Shorthand for --cli claude
   --model <model>      Override model (opencode only)
   (no args)            Let Ralph choose its own task based on config.json
 
@@ -551,6 +553,14 @@ cmd_start() {
             --cli)
                 agent_cli_override="$2"
                 shift 2
+                ;;
+            --opencode)
+                agent_cli_override="opencode"
+                shift
+                ;;
+            --claude)
+                agent_cli_override="claude"
+                shift
                 ;;
             --model)
                 model_override="$2"

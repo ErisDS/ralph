@@ -24,6 +24,8 @@ ralph.sh build                   # Build project image
 ralph.sh start                   # Let Ralph choose a task
 ralph.sh start --issue 42        # Start agent on issue 42
 ralph.sh start --cli claude      # Override agent CLI for this run
+ralph.sh start --opencode        # Shorthand for --cli opencode
+ralph.sh start --claude          # Shorthand for --cli claude
 ralph.sh start --model anthropic/claude-sonnet-4-20250514  # Override model (opencode)
 ralph.sh list                    # See all running agents
 ```
@@ -169,7 +171,7 @@ Notes:
 - `prdFile`: used when `mode` is `prd`
 - `commitMode`: `pr`, `main`, `commit`, `branch`, or `none`
 - `agent.review`: set to `copilot` to require Copilot review in PR mode
-- `ralph.sh start --cli` and `--model` override config for a single run
+- `ralph.sh start --cli` and `--model` override config for a single run (or use `--opencode`/`--claude`)
 
 Optional: add project-specific instructions in `ralph/prompt.md` (Docker) or `.ralph/prompt-once.md` (single-agent).
 
