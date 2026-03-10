@@ -4,6 +4,7 @@ set -e
 VERSION="1.1.0"
 CONFIG_DIR=".ralph"
 CONFIG_FILE="$CONFIG_DIR/config.json"
+CONFIG_FILE_ABS=""
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 GLOBAL_CONFIG_DIR="$HOME/.config/ralph"
 
@@ -72,6 +73,155 @@ ensure_global_template() {
 # Normalize repo to owner/repo format, handling URLs, .git suffix, etc.
 normalize_repo() {
     echo "$1" | sed -E 's|^https?://||; s|.*github\.com[:/]||; s|\.git$||; s|/$||'
+}
+
+slugify() {
+    echo "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-+/-/g'
+}
+
+render_workspace_template() {
+    local template="$1"
+    local issue_number="$2"
+    local issue_desc="$3"
+    local repo="$4"
+    local rendered="$template"
+
+    rendered="${rendered//\{\{ISSUE_NUMBER\}\}/$issue_number}"
+    rendered="${rendered//\{\{ISSUE_DESC\}\}/$issue_desc}"
+    rendered="${rendered//\{\{ISSUE_DESC_SLUG\}\}/$issue_desc}"
+    rendered="${rendered//\{\{REPO\}\}/$repo}"
+
+    echo "$rendered"
+}
+
+extract_worktree_path_from_output() {
+    local output="$1"
+    local worktree_path=""
+
+    worktree_path=$(printf '%s\n' "$output" | sed -n 's/^Created worktree:[[:space:]]*//p' | tail -1)
+    if [ -z "$worktree_path" ]; then
+        worktree_path=$(printf '%s\n' "$output" | sed -n 's/^Would create worktree:[[:space:]]*//p' | tail -1)
+    fi
+    if [ -z "$worktree_path" ]; then
+        worktree_path=$(printf '%s\n' "$output" | sed -n 's/^[[:space:]]*cd[[:space:]]\+//p' | tail -1)
+    fi
+
+    echo "$worktree_path"
+}
+
+setup_repo_workspace() {
+    local enabled
+    enabled=$(json_value '.workspace.enabled // .once.workspace.enabled')
+    [ "$enabled" = "true" ] || return 0
+
+    if [ "$MODE" != "github" ]; then
+        echo "Warning: workspace.enabled is set, but mode is '$MODE'. Skipping workspace setup."
+        return 0
+    fi
+
+    local create_template
+    create_template=$(json_value '.workspace.createCommand // .once.workspace.createCommand')
+    if [ -z "$create_template" ]; then
+        echo "Error: workspace.enabled is true but workspace.createCommand is missing"
+        exit 1
+    fi
+
+    if [ -z "$SPECIFIC_TASK" ] && [[ "$create_template" == *"{{ISSUE_NUMBER}}"* ]]; then
+        echo "Error: workspace createCommand uses {{ISSUE_NUMBER}} but no --issue/--task was provided"
+        exit 1
+    fi
+
+    local issue_title=""
+    if [ -n "$SPECIFIC_TASK" ] && command -v gh >/dev/null 2>&1; then
+        issue_title=$(gh issue view "$SPECIFIC_TASK" --repo "$REPO" --json title --jq '.title' 2>/dev/null || true)
+    fi
+
+    local issue_number="$SPECIFIC_TASK"
+    local issue_desc
+    issue_desc=$(slugify "$issue_title")
+    if [ -z "$issue_desc" ] && [ -n "$issue_number" ]; then
+        issue_desc="issue-$issue_number"
+    fi
+
+    local create_command
+    create_command=$(render_workspace_template "$create_template" "$issue_number" "$issue_desc" "$REPO")
+
+    echo "Setting up repo workspace..."
+    echo "Running: $create_command"
+
+    local create_output
+    if ! create_output=$(bash -lc "$create_command" 2>&1); then
+        echo "$create_output"
+        local existing_path
+        existing_path=$(printf '%s\n' "$create_output" | sed -n 's/^Worktree path already exists:[[:space:]]*//p' | tail -1)
+        if [ -n "$existing_path" ]; then
+            echo "Workspace already exists, reusing it."
+            create_output="$create_output
+Created worktree: $existing_path"
+        else
+            echo "Error: workspace createCommand failed"
+            exit 1
+        fi
+    fi
+    [ -n "$create_output" ] && echo "$create_output"
+
+    local path_template
+    path_template=$(json_value '.workspace.pathTemplate // .once.workspace.pathTemplate')
+
+    local worktree_path=""
+    if [ -n "$path_template" ]; then
+        worktree_path=$(render_workspace_template "$path_template" "$issue_number" "$issue_desc" "$REPO")
+    else
+        worktree_path=$(extract_worktree_path_from_output "$create_output")
+    fi
+
+    if [ -z "$worktree_path" ]; then
+        echo "Error: Could not determine worktree path. Set workspace.pathTemplate in .ralph/config.json"
+        exit 1
+    fi
+
+    if [[ "$worktree_path" != /* ]]; then
+        worktree_path="$PWD/$worktree_path"
+    fi
+
+    if [ ! -d "$worktree_path" ]; then
+        echo "Error: Worktree path does not exist: $worktree_path"
+        exit 1
+    fi
+
+    local source_config="$CONFIG_FILE"
+    [ -n "$CONFIG_FILE_ABS" ] && source_config="$CONFIG_FILE_ABS"
+    local workspace_config="$worktree_path/.ralph/config.json"
+    if [ ! -f "$workspace_config" ] && [ -f "$source_config" ]; then
+        mkdir -p "$worktree_path/.ralph"
+        cp "$source_config" "$workspace_config"
+        echo "Copied config to workspace: $workspace_config"
+    fi
+
+    cd "$worktree_path"
+    echo "Using workspace: $worktree_path"
+
+    local config_path="$CONFIG_FILE"
+    [ -n "$CONFIG_FILE_ABS" ] && config_path="$CONFIG_FILE_ABS"
+
+    local bootstrap_count
+    bootstrap_count=$(jq -r '.workspace.bootstrap // .once.bootstrap // [] | length' "$config_path" 2>/dev/null || echo "0")
+    if [ "$bootstrap_count" -gt 0 ]; then
+        local i
+        for ((i = 0; i < bootstrap_count; i++)); do
+            local bootstrap_template
+            bootstrap_template=$(jq -r ".workspace.bootstrap[$i] // .once.bootstrap[$i] // \"\"" "$config_path" 2>/dev/null || echo "")
+            [ -z "$bootstrap_template" ] && continue
+
+            local bootstrap_command
+            bootstrap_command=$(render_workspace_template "$bootstrap_template" "$issue_number" "$issue_desc" "$REPO")
+
+            echo "Running bootstrap: $bootstrap_command"
+            bash -lc "$bootstrap_command"
+        done
+    fi
+
+    WORKSPACE_ACTIVE=true
 }
 
 interactive_setup() {
@@ -180,6 +330,11 @@ Options:
   --model <model> Override model (opencode only)
   --setup         Force interactive setup (overwrites existing config)
 
+Workspace:
+  If .ralph/config.json has "workspace.enabled": true, Ralph will
+  run createCommand to set up an isolated workspace (e.g. git worktree)
+  and bootstrap commands (e.g. pnpm install) before starting the agent.
+
 Examples:
   ralph-once.sh                          # Use saved config or run setup
   ralph-once.sh myorg/myproject          # GitHub issues mode
@@ -205,6 +360,7 @@ MODEL_OVERRIDE=""
 AGENT_REVIEW=""
 FORCE_SETUP=false
 SPECIFIC_TASK=""
+WORKSPACE_ACTIVE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -282,6 +438,8 @@ fi
 
 [ -n "$FLAG_AGENT_REVIEW" ] && AGENT_REVIEW="$FLAG_AGENT_REVIEW"
 
+CONFIG_FILE_ABS="$(pwd -P)/$CONFIG_FILE"
+
 # Defaults
 [ -z "$COMMIT_MODE" ] && COMMIT_MODE="pr"
 [ -z "$AGENT" ] && AGENT="opencode"
@@ -313,13 +471,20 @@ case "$MODE" in
     prd)    validate_prd_mode ;;
 esac
 
+setup_repo_workspace
+
 # ============================================================
 # PREPARE WORKSPACE
 # ============================================================
-DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
-echo "Checking out $DEFAULT_BRANCH and pulling latest..."
-git checkout "$DEFAULT_BRANCH"
-git pull origin "$DEFAULT_BRANCH"
+if [ "$WORKSPACE_ACTIVE" = true ]; then
+    echo "Workspace mode active - staying on branch: $(git branch --show-current)"
+    git fetch origin
+else
+    DEFAULT_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+    echo "Checking out $DEFAULT_BRANCH and pulling latest..."
+    git checkout "$DEFAULT_BRANCH"
+    git pull origin "$DEFAULT_BRANCH"
+fi
 
 # For PRD mode, use progress.txt; for GitHub mode, use recent commit history
 if [ "$MODE" = "prd" ]; then
