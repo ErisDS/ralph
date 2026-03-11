@@ -380,6 +380,9 @@ Optional (repo-specific) workspace bootstrap for `ralph-once.sh`:
     "createCommand": "pnpm worktree:create feature/{{ISSUE_NUMBER}}-{{ISSUE_DESC}}",
     "bootstrap": [
       "pnpm install"
+    ],
+    "copyFiles": [
+      "opencode.json"
     ]
   }
 }
@@ -388,6 +391,7 @@ Optional (repo-specific) workspace bootstrap for `ralph-once.sh`:
 Notes:
 - This is only used by `ralph-once.sh`; other projects can ignore it.
 - Placeholders supported in `createCommand` and `bootstrap`: `{{ISSUE_NUMBER}}`, `{{ISSUE_DESC}}`, `{{REPO}}`.
+- `copyFiles`: untracked/gitignored files to copy from the main repo into the workspace (e.g. `opencode.json`, `.env`).
 - If your create command output doesn't include a clear worktree path, set `workspace.pathTemplate`.
 
 ---
