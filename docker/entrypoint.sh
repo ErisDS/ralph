@@ -626,7 +626,7 @@ printf '%s' "$DELIVER_STEPS" > "$VARS_DIR/DELIVER_STEPS"
 printf '%s' "$SECTION_REVIEW" > "$VARS_DIR/SECTION_REVIEW"
 printf '%s' "$PROJECT_INSTRUCTIONS" > "$VARS_DIR/PROJECT_INSTRUCTIONS"
 
-PROMPT=$(awk '
+PROMPT=$(awk -v VARS_DIR="$VARS_DIR" '
     BEGIN {
         placeholders[1] = "TASK_CONTEXT"
         placeholders[2] = "TASK_ITEM"
@@ -659,7 +659,7 @@ PROMPT=$(awk '
         }
         print line
     }
-' VARS_DIR="$VARS_DIR" "$PROMPT_TMP")
+' "$PROMPT_TMP")
 
 check_dependency "$AGENT_CLI"
 
