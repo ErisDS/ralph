@@ -546,18 +546,61 @@ else
     exit 1
 fi
 
-PROMPT_TEMPLATE=$(sed '/<!-- TEMPLATE_DOCS_START -->/,/<!-- TEMPLATE_DOCS_END -->/d' "$TEMPLATE_PATH")
-PROMPT="$PROMPT_TEMPLATE"
-PROMPT="${PROMPT//\{\{TASK_CONTEXT\}\}/$TASK_CONTEXT}"
-PROMPT="${PROMPT//\{\{TASK_ITEM\}\}/$TASK_ITEM}"
-PROMPT="${PROMPT//\{\{PROGRESS_HEADER\}\}/$PROGRESS_HEADER}"
-PROMPT="${PROMPT//\{\{PROGRESS\}\}/$PROGRESS}"
-PROMPT="${PROMPT//\{\{SPECIFIC_TASK_INSTRUCTION\}\}/$SPECIFIC_TASK_INSTRUCTION}"
-PROMPT="${PROMPT//\{\{PROGRESS_CHECKLIST_ITEM\}\}/$PROGRESS_CHECKLIST_ITEM}"
-PROMPT="${PROMPT//\{\{PRE_COMMIT_EXTRA_ITEM\}\}/$PRE_COMMIT_EXTRA_ITEM}"
-PROMPT="${PROMPT//\{\{DELIVER_STEPS\}\}/$DELIVER_STEPS}"
-PROMPT="${PROMPT//\{\{SECTION_REVIEW\}\}/$SECTION_REVIEW}"
-PROMPT="${PROMPT//\{\{PROJECT_INSTRUCTIONS\}\}/}"  # Empty for non-Docker
+# Build prompt using temp files + awk to avoid bash O(n²) string replacement
+PROMPT_TMP=$(mktemp)
+trap 'rm -f "$PROMPT_TMP" "$PROMPT_TMP".vars' EXIT
+
+sed '/<!-- TEMPLATE_DOCS_START -->/,/<!-- TEMPLATE_DOCS_END -->/d' "$TEMPLATE_PATH" > "$PROMPT_TMP"
+
+# Write each variable to a file, then use awk to do all replacements in one pass
+VARS_DIR=$(mktemp -d)
+trap 'rm -rf "$VARS_DIR" "$PROMPT_TMP"' EXIT
+
+printf '%s' "$TASK_CONTEXT" > "$VARS_DIR/TASK_CONTEXT"
+printf '%s' "$TASK_ITEM" > "$VARS_DIR/TASK_ITEM"
+printf '%s' "$PROGRESS_HEADER" > "$VARS_DIR/PROGRESS_HEADER"
+printf '%s' "$PROGRESS" > "$VARS_DIR/PROGRESS"
+printf '%s' "$SPECIFIC_TASK_INSTRUCTION" > "$VARS_DIR/SPECIFIC_TASK_INSTRUCTION"
+printf '%s' "$PROGRESS_CHECKLIST_ITEM" > "$VARS_DIR/PROGRESS_CHECKLIST_ITEM"
+printf '%s' "$PRE_COMMIT_EXTRA_ITEM" > "$VARS_DIR/PRE_COMMIT_EXTRA_ITEM"
+printf '%s' "$DELIVER_STEPS" > "$VARS_DIR/DELIVER_STEPS"
+printf '%s' "$SECTION_REVIEW" > "$VARS_DIR/SECTION_REVIEW"
+printf '%s' "" > "$VARS_DIR/PROJECT_INSTRUCTIONS"
+
+PROMPT=$(awk '
+    BEGIN {
+        placeholders[1] = "TASK_CONTEXT"
+        placeholders[2] = "TASK_ITEM"
+        placeholders[3] = "PROGRESS_HEADER"
+        placeholders[4] = "PROGRESS"
+        placeholders[5] = "SPECIFIC_TASK_INSTRUCTION"
+        placeholders[6] = "PROGRESS_CHECKLIST_ITEM"
+        placeholders[7] = "PRE_COMMIT_EXTRA_ITEM"
+        placeholders[8] = "DELIVER_STEPS"
+        placeholders[9] = "SECTION_REVIEW"
+        placeholders[10] = "PROJECT_INSTRUCTIONS"
+        for (i = 1; i <= 10; i++) {
+            name = placeholders[i]
+            file = VARS_DIR "/" name
+            val = ""
+            while ((getline line < file) > 0) {
+                val = val (val == "" ? "" : "\n") line
+            }
+            close(file)
+            values["{{" name "}}"] = val
+        }
+    }
+    {
+        line = $0
+        for (key in values) {
+            while (index(line, key) > 0) {
+                pos = index(line, key)
+                line = substr(line, 1, pos - 1) values[key] substr(line, pos + length(key))
+            }
+        }
+        print line
+    }
+' VARS_DIR="$VARS_DIR" "$PROMPT_TMP")
 
 check_dependency "$AGENT"
 
