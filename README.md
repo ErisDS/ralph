@@ -371,25 +371,6 @@ Stored in `.ralph/config.json` per project:
 }
 ```
 
-Optional (repo-specific) workspace bootstrap for `ralph-once.sh`:
-
-```json
-{
-  "workspace": {
-    "enabled": true,
-    "createCommand": "pnpm worktree:create feature/{{ISSUE_NUMBER}}-{{ISSUE_DESC}}",
-    "bootstrap": [
-      "pnpm install"
-    ]
-  }
-}
-```
-
-Notes:
-- This is only used by `ralph-once.sh`; other projects can ignore it.
-- Placeholders supported in `createCommand` and `bootstrap`: `{{ISSUE_NUMBER}}`, `{{ISSUE_DESC}}`, `{{REPO}}`.
-- If your create command output doesn't include a clear worktree path, set `workspace.pathTemplate`.
-
 ---
 
 ## PRD File Format
