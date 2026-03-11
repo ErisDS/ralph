@@ -198,28 +198,6 @@ Created worktree: $existing_path"
         echo "Copied config to workspace: $workspace_config"
     fi
 
-    # Copy untracked config files that won't appear in worktrees automatically
-    local source_root
-    source_root=$(dirname "$(dirname "$source_config")")
-    local copy_count
-    copy_count=$(jq -r '.workspace.copyFiles // [] | length' "$source_config" 2>/dev/null || echo "0")
-    if [ "$copy_count" -gt 0 ]; then
-        local i
-        for ((i = 0; i < copy_count; i++)); do
-            local file_to_copy
-            file_to_copy=$(jq -r ".workspace.copyFiles[$i] // \"\"" "$source_config" 2>/dev/null || echo "")
-            [ -z "$file_to_copy" ] && continue
-
-            local src_file="$source_root/$file_to_copy"
-            local dst_file="$worktree_path/$file_to_copy"
-            if [ -f "$src_file" ] && [ ! -f "$dst_file" ]; then
-                mkdir -p "$(dirname "$dst_file")"
-                cp "$src_file" "$dst_file"
-                echo "Copied $file_to_copy to workspace"
-            fi
-        done
-    fi
-
     cd "$worktree_path"
     echo "Using workspace: $worktree_path"
 
